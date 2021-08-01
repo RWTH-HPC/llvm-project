@@ -993,7 +993,8 @@ static void ompt_tsan_task_schedule(ompt_data_t *first_task_data,
   }
   // 1. Task will begin execution after it has been created.
   // 2. Task will resume after it has been switched away.
-  TsanHappensAfter(ToTask->GetTaskPtr());
+  if (!ToTask->isIncluded())
+    TsanHappensAfter(ToTask->GetTaskPtr());
 }
 
 static void ompt_tsan_dependences(ompt_data_t *task_data,
