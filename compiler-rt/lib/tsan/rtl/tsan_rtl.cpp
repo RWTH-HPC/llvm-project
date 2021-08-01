@@ -725,6 +725,8 @@ void MemoryAccessImpl1(ThreadState *thr, uptr addr,
   // the current access info, so we are done
   if (LIKELY(stored))
     return;
+  if(LIKELY(!kAccessIsWrite))
+    return;
   // choose a random candidate slot and replace it
   StoreShadow(shadow_mem + (cur.epoch() % kShadowCnt), store_word);
   return;
