@@ -721,12 +721,19 @@ void MemoryAccessImpl1(ThreadState *thr, uptr addr,
   }
 #endif
 
+  static int sampling_level=flags()->sampling_level;
+  static int sampling_mask=(1<<sampling_level)-1;
   // we did not find any races and had already stored
   // the current access info, so we are done
   if (LIKELY(stored))
     return;
   // choose a random candidate slot and replace it
-  StoreShadow(shadow_mem + (cur.epoch() % kShadowCnt), store_word);
+  if (LIKELY(kAccessIsWrite || sampling_level==0)) {
+    StoreShadow(shadow_mem + (cur.epoch() % kShadowCnt), store_word);
+  } else {
+    if (((++(thr->sample_read_counter)) & sampling_mask) == 0)
+      StoreShadow(shadow_mem + (cur.epoch() % kShadowCnt), store_word);
+  }
   return;
  RACE:
   HandleRace(thr, shadow_mem, cur, old);

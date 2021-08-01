@@ -82,3 +82,5 @@ TSAN_FLAG(bool, ignore_noninstrumented_modules, SANITIZER_MAC ? true : false,
           "modules.")
 TSAN_FLAG(bool, shared_ptr_interceptor, true,
           "Track atomic reference counting in libc++ shared_ptr and weak_ptr.")
+TSAN_FLAG(int, sampling_level, 0, "Only log every 2^sampling_level read access, "
+          "that did not get stored in the inner loop.")

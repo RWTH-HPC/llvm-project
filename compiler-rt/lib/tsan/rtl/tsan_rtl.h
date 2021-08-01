@@ -414,6 +414,8 @@ struct ThreadState {
   const uptr tls_addr;
   const uptr tls_size;
   ThreadContext *tctx;
+  
+  u64 sample_read_counter{0};
 
   DDLogicalThread *dd_lt;
 
