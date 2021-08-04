@@ -244,20 +244,44 @@ InputArgList Driver::ParseArgStrings(ArrayRef<const char *> ArgStrings,
   }
 
   for (const Arg *A : Args.filtered(options::OPT_UNKNOWN)) {
-    unsigned DiagID;
+    // The default diagnostic when the option is unknown
+    unsigned DiagID = diag::err_drv_unknown_argument;
+
+    // Try to find a good hint for the user
     auto ArgString = A->getAsString(Args);
     std::string Nearest;
-    if (getOpts().findNearest(
-          ArgString, Nearest, IncludedFlagsBitmask, ExcludedFlagsBitmask) > 1) {
-      DiagID = IsCLMode() ? diag::warn_drv_unknown_argument_clang_cl
-                          : diag::err_drv_unknown_argument;
-      Diags.Report(DiagID) << ArgString;
-    } else {
+    unsigned Distance = getOpts().findNearest(
+        ArgString, Nearest, IncludedFlagsBitmask, ExcludedFlagsBitmask);
+    assert(Distance != 0 && "This option should not be 'unknown'");
+
+    if (Distance == 1) {
+      // Found a good suggestion - propose that through a diagnostic
       DiagID = IsCLMode()
                    ? diag::warn_drv_unknown_argument_clang_cl_with_suggestion
                    : diag::err_drv_unknown_argument_with_suggestion;
       Diags.Report(DiagID) << ArgString << Nearest;
+    } else {
+      // No good suggestion was found - issue an error (default) or a warning.
+      // The actual diagnostic depends on the mode in which the driver operates
+      if (IsCLMode())
+        // In CL mode just warn the user (MSVC consumes everything anyway)
+        DiagID = diag::warn_drv_unknown_argument_clang_cl;
+      else if (!IsFlangMode()) {
+        // In non-Flang mode, warn _if_ this is a Flang-only flag. Clang will
+        // reject/ignore these, but like in GCC, this shouldn't be an error.
+        // TODO: Currently this will only work for non-alias options. Options
+        // that are aliases are internally stored as their non-alias versions.
+        // When mixed with `OPT_UNKNOWN`, this seems to confuse `findNearest`.
+        unsigned ExcludedFlagsBitmaskWithFlang =
+            ExcludedFlagsBitmask & ~options::FlangOnlyOption;
+        if (getOpts().findNearest(ArgString, Nearest, IncludedFlagsBitmask,
+                                  ExcludedFlagsBitmaskWithFlang) == 0)
+          DiagID = diag::warn_drv_flang_argument;
+      } // TODO: In Flang-mode, check whether this is a Clang-only flag.
+
+      Diags.Report(DiagID) << ArgString;
     }
+
     ContainsError |= Diags.getDiagnosticLevel(DiagID, SourceLocation()) >
                      DiagnosticsEngine::Warning;
   }

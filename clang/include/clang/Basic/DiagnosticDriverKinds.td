@@ -200,6 +200,9 @@ def err_arch_unsupported_isa
 def err_drv_I_dash_not_supported : Error<
   "'%0' not supported, please use -iquote instead">;
 def err_drv_unknown_argument : Error<"unknown argument: '%0'">;
+def warn_drv_flang_argument : Warning<
+  "command line option '%0' is only valid in Flang mode (i.e. for Fortran input)">,
+  InGroup<UnknownArgument>;
 def err_drv_unknown_argument_with_suggestion : Error<
   "unknown argument '%0'; did you mean '%1'?">;
 def warn_drv_unknown_argument_clang_cl : Warning<
