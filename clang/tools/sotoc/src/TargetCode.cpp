@@ -62,6 +62,10 @@ bool TargetCode::addCodeFragmentFront(
 }
 
 void TargetCode::generateCode(llvm::raw_ostream &Out) {
+
+  bool stdlib = false;
+  bool unistd = false;
+
   for (auto &i : SystemHeaders) {
     std::string Header(i);
     size_t include_pos = Header.rfind("nclude/");
@@ -178,6 +182,11 @@ void TargetCode::generateFunctionPrologue(TargetCodeRegion *TCR,
 
   Out << ")\n{\n";
 
+  // Target Delay
+  if (std::atoi(llvm::sys::Process::GetEnv("NEC_TARGET_DELAY").getValueOr("0").c_str())) {
+    Out << "sleep(atoi((getenv(\"NEC_TARGET_DELAY\") != NULL) ? getenv(\"NEC_TARGET_DELAY\") : \"0\"));\n";
+  }
+
   // bring captured scalars into scope
   for (auto &Var : TCR->capturedVars()) {
     // Ignore everything not passed by reference here
@@ -220,9 +229,13 @@ void TargetCode::generateFunctionPrologue(TargetCodeRegion *TCR,
           LowerBound.getValue()->printPretty(Out, NULL, TCR->getPP());
           Out << ";\n";
         }
-      } else if (Var.isPointer()){
-        Out << Var.baseTypeName() << "* " << Var.name() << " = "
-            << "__sotoc_var_" << Var.name() << ";\n";
+      } else if (int depth = Var.pointerDepth()) { // If Var is pointer
+        Out << Var.baseTypeName();
+        for (int j = 0; j < depth; ++j){
+          Out << "*";
+        }
+        Out << " " << Var.name() << " = " << "__sotoc_var_"
+            << Var.name() << ";\n";
       } else {
         // Handle all other types passed by reference
         Out << Var.baseTypeName() << " " << Var.name() << " = "
@@ -265,9 +278,9 @@ void TargetCode::generateFunctionEpilogue(TargetCodeRegion *TCR,
   Out << "\n";
   // copy values from scalars from scoped vars back into pointers
   for (auto &Var : TCR->capturedVars()) {
-    if (Var.passedByPointer() && !Var.isArray() && !Var.isPointer()) {
+    if (Var.passedByPointer() && !Var.isArray() && !Var.pointerDepth()) {
       Out << "\n  *__sotoc_var_" << Var.name() << " = " << Var.name() << ";";
-    } else if (Var.isPointer()){
+    } else if (Var.pointerDepth()){
       Out << "\n  __sotoc_var_" << Var.name() << " = " << Var.name() << ";";
     }
   }
