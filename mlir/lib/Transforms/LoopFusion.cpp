@@ -16,6 +16,7 @@
 #include "mlir/Analysis/LoopAnalysis.h"
 #include "mlir/Analysis/Utils.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/IR/AffineExpr.h"
 #include "mlir/IR/AffineMap.h"
 #include "mlir/IR/Builders.h"
@@ -32,8 +33,6 @@
 #include <iomanip>
 #include <sstream>
 #define DEBUG_TYPE "affine-loop-fusion"
-
-using llvm::SetVector;
 
 using namespace mlir;
 
@@ -71,19 +70,20 @@ mlir::createLoopFusionPass(unsigned fastMemorySpace,
 namespace {
 
 // LoopNestStateCollector walks loop nests and collects load and store
-// operations, and whether or not an IfInst was encountered in the loop nest.
+// operations, and whether or not a region holding op other than ForOp and IfOp
+// was encountered in the loop nest.
 struct LoopNestStateCollector {
   SmallVector<AffineForOp, 4> forOps;
   SmallVector<Operation *, 4> loadOpInsts;
   SmallVector<Operation *, 4> storeOpInsts;
-  bool hasNonForRegion = false;
+  bool hasNonAffineRegionOp = false;
 
   void collect(Operation *opToWalk) {
     opToWalk->walk([&](Operation *op) {
       if (isa<AffineForOp>(op))
         forOps.push_back(cast<AffineForOp>(op));
-      else if (op->getNumRegions() != 0)
-        hasNonForRegion = true;
+      else if (op->getNumRegions() != 0 && !isa<AffineIfOp>(op))
+        hasNonAffineRegionOp = true;
       else if (isa<AffineReadOpInterface>(op))
         loadOpInsts.push_back(op);
       else if (isa<AffineWriteOpInterface>(op))
@@ -745,9 +745,9 @@ bool MemRefDependenceGraph::init(FuncOp f) {
       // all loads and store accesses it contains.
       LoopNestStateCollector collector;
       collector.collect(&op);
-      // Return false if a non 'affine.for' region was found (not currently
-      // supported).
-      if (collector.hasNonForRegion)
+      // Return false if a region holding op other than 'affine.for' and
+      // 'affine.if' was found (not currently supported).
+      if (collector.hasNonAffineRegionOp)
         return false;
       Node node(nextNodeId++, &op);
       for (auto *opInst : collector.loadOpInsts) {
@@ -916,12 +916,12 @@ static Value createPrivateMemRef(AffineForOp forOp, Operation *srcStoreOpInst,
   assert(numElements.hasValue() &&
          "non-constant number of elts in local buffer");
 
-  const FlatAffineConstraints *cst = region.getConstraints();
+  const FlatAffineValueConstraints *cst = region.getConstraints();
   // 'outerIVs' holds the values that this memory region is symbolic/parametric
   // on; this would correspond to loop IVs surrounding the level at which the
   // slice is being materialized.
   SmallVector<Value, 8> outerIVs;
-  cst->getIdValues(rank, cst->getNumIds(), &outerIVs);
+  cst->getValues(rank, cst->getNumIds(), &outerIVs);
 
   // Build 'rank' AffineExprs from MemRefRegion 'lbs'
   SmallVector<AffineExpr, 4> offsets;
@@ -958,7 +958,7 @@ static Value createPrivateMemRef(AffineForOp forOp, Operation *srcStoreOpInst,
   // consumer loop nests to reduce their live range. Currently they are added
   // at the beginning of the function, because loop nests can be reordered
   // during the fusion pass.
-  Value newMemRef = top.create<AllocOp>(forOp.getLoc(), newMemRefType);
+  Value newMemRef = top.create<memref::AllocOp>(forOp.getLoc(), newMemRefType);
 
   // Build an AffineMap to remap access functions based on lower bound offsets.
   SmallVector<AffineExpr, 4> remapExprs;
@@ -1576,9 +1576,15 @@ public:
 
           DenseSet<Value> privateMemrefs;
           for (Value memref : producerConsumerMemrefs) {
-            // Don't create a private memref if 'srcNode' writes to escaping
-            // memrefs.
-            if (srcEscapingMemRefs.count(memref) > 0)
+            // If `memref` is an escaping one, do not create a private memref
+            // for the below scenarios, since doing so will leave the escaping
+            // memref unmodified as all the writes originally meant for the
+            // escaping memref would be performed on the private memref:
+            // 1. The source is to be removed after fusion,
+            // OR
+            // 2. The destination writes to `memref`.
+            if (srcEscapingMemRefs.count(memref) > 0 &&
+                (removeSrcNode || dstNode->getStoreOpCount(memref) > 0))
               continue;
 
             // Don't create a private memref if 'srcNode' has in edges on
@@ -1646,6 +1652,10 @@ public:
               // Add edge from 'newMemRef' node to dstNode.
               mdg->addEdge(newMemRefNodeId, dstId, newMemRef);
             }
+            // One or more entries for 'newMemRef' alloc op are inserted into
+            // the DenseMap mdg->nodes. Since an insertion may cause DenseMap to
+            // reallocate, update dstNode.
+            dstNode = mdg->getNode(dstId);
           }
 
           // Collect dst loop stats after memref privatization transformation.
@@ -1673,6 +1683,7 @@ public:
   // Visits each node in the graph, and for each node, attempts to fuse it with
   // its sibling nodes (nodes which share a parent, but no dependence edges).
   void fuseSiblingNodes() {
+    LLVM_DEBUG(llvm::dbgs() << "--- Sibling Fusion ---\n");
     init();
     while (!worklist.empty()) {
       unsigned dstId = worklist.back();
@@ -1764,10 +1775,14 @@ public:
       assert(bestDstLoopDepth > 0 && "Unexpected loop fusion depth");
       assert(!depthSliceUnions[bestDstLoopDepth - 1].isEmpty() &&
              "Fusion depth has no computed slice union");
-
+      // Check if source loop is being inserted in the innermost
+      // destination loop. Based on this, the fused loop may be optimized
+      // further inside `fuseLoops`.
+      bool isInnermostInsertion = (bestDstLoopDepth == dstLoopDepthTest);
       // Fuse computation slice of 'sibLoopNest' into 'dstLoopNest'.
       mlir::fuseLoops(sibAffineForOp, dstAffineForOp,
-                      depthSliceUnions[bestDstLoopDepth - 1]);
+                      depthSliceUnions[bestDstLoopDepth - 1],
+                      isInnermostInsertion);
 
       auto dstForInst = cast<AffineForOp>(dstNode->op);
       // Update operation position of fused loop nest (if needed).
@@ -1937,7 +1952,7 @@ public:
         continue;
       // Use list expected to match the dep graph info.
       auto *op = memref.getDefiningOp();
-      if (isa_and_nonnull<AllocOp>(op))
+      if (isa_and_nonnull<memref::AllocOp>(op))
         op->erase();
     }
   }

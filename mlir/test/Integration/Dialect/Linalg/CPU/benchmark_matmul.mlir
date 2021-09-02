@@ -5,7 +5,7 @@
 // RUN: mlir-opt -test-linalg-codegen-strategy="anchor-op=linalg.copy register-tile-sizes=4,32 vectorize" | \
 
 // RUN: mlir-opt -canonicalize -convert-vector-to-scf -lower-affine -convert-linalg-to-loops | \
-// RUN: mlir-opt -canonicalize -convert-scf-to-std -convert-vector-to-llvm -convert-std-to-llvm | \
+// RUN: mlir-opt -canonicalize -convert-scf-to-std -convert-vector-to-llvm -convert-memref-to-llvm -convert-std-to-llvm | \
 // RUN: mlir-cpu-runner -O3 -e main -entry-point-result=void \
 // Activate to dump assembly
 // R_UN:   -dump-object-file -object-filename=/tmp/a.o \
@@ -55,13 +55,13 @@ func @main() {
   %v0 = constant 0.0 : !elem_type_a
   %v1 = constant 1.0 : !elem_type_a
 
-  %A = alloc() : !row_major_A
-  %B = alloc() : !row_major_B
-  %C = alloc() : !row_major_C
+  %A = memref.alloc() : !row_major_A
+  %B = memref.alloc() : !row_major_B
+  %C = memref.alloc() : !row_major_C
 
-  linalg.fill(%A, %v1) : !row_major_A, !elem_type_a
-  linalg.fill(%B, %v1) : !row_major_B, !elem_type_b
-  linalg.fill(%C, %v0) : !row_major_C, !elem_type_c
+  linalg.fill(%v1, %A) : !elem_type_a, !row_major_A
+  linalg.fill(%v1, %B) : !elem_type_b, !row_major_B
+  linalg.fill(%v0, %C) : !elem_type_c, !row_major_C
 
   %c0 = constant 0: index
   %c1 = constant 1: index
@@ -71,7 +71,7 @@ func @main() {
   /// Preheating run:
   scf.for %arg0 = %c0 to %iters step %c1 {
     %z = constant 0.0 : !elem_type_c
-    linalg.fill(%C, %z) : !row_major_C, !elem_type_c
+    linalg.fill(%z, %C) : !elem_type_c, !row_major_C
     call @matmul(%A, %B, %C) : (!row_major_A, !row_major_B, !row_major_C) -> ()
   }
   %t_start_matmul = call @rtclock() : () -> f64
@@ -81,7 +81,7 @@ func @main() {
     // Once linalg on tensors is ready, fusing fill at the register level will
     // be easy.
     %z = constant 0.0 : !elem_type_c
-    linalg.fill(%C, %z) : !row_major_C, !elem_type_c
+    linalg.fill(%z, %C) : !elem_type_c, !row_major_C
     call @matmul(%A, %B, %C) : (!row_major_A, !row_major_B, !row_major_C) -> ()
   }
   %t_end_matmul = call @rtclock() : () -> f64
@@ -89,19 +89,19 @@ func @main() {
   call @print_perf(%iters, %tmatmul) : (index, f64) -> ()
 
   // CHECK: {{^0$}}
-  %C_ref = alloc() : !row_major_C
-  linalg.fill(%C_ref, %v0) : !row_major_C, !elem_type_c
+  %C_ref = memref.alloc() : !row_major_C
+  linalg.fill(%v0, %C_ref) : !elem_type_c, !row_major_C
   linalg.matmul ins(%A, %B : !row_major_A, !row_major_B)
     outs(%C_ref: !row_major_C)
-  %act = memref_cast %C : !row_major_C to memref<*xf32>
-  %exp = memref_cast %C_ref : !row_major_C to memref<*xf32>
+  %act = memref.cast %C : !row_major_C to memref<*xf32>
+  %exp = memref.cast %C_ref : !row_major_C to memref<*xf32>
   %errors = call @verifyMemRefF32(%act, %exp) : (memref<*xf32>, memref<*xf32>) -> i64
   vector.print %errors : i64
-  dealloc %C_ref : !row_major_C
+  memref.dealloc %C_ref : !row_major_C
 
-  dealloc %A : !row_major_A
-  dealloc %B : !row_major_B
-  dealloc %C : !row_major_C
+  memref.dealloc %A : !row_major_A
+  memref.dealloc %B : !row_major_B
+  memref.dealloc %C : !row_major_C
 
   return
 }

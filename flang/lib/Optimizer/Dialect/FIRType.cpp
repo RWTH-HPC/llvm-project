@@ -13,6 +13,7 @@
 #include "flang/Optimizer/Dialect/FIRType.h"
 #include "flang/Optimizer/Dialect/FIRDialect.h"
 #include "mlir/IR/Builders.h"
+#include "mlir/IR/BuiltinDialect.h"
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/DialectImplementation.h"
 #include "llvm/ADT/SmallPtrSet.h"
@@ -188,7 +189,7 @@ bool isa_fir_type(mlir::Type t) {
 }
 
 bool isa_std_type(mlir::Type t) {
-  return t.getDialect().getNamespace().empty();
+  return llvm::isa<mlir::BuiltinDialect>(t.getDialect());
 }
 
 bool isa_fir_or_std_type(mlir::Type t) {
@@ -865,4 +866,16 @@ mlir::LogicalResult fir::VectorType::verify(
 
 bool fir::VectorType::isValidElementType(mlir::Type t) {
   return isa_real(t) || isa_integer(t);
+}
+
+//===----------------------------------------------------------------------===//
+// FIROpsDialect
+//===----------------------------------------------------------------------===//
+
+void FIROpsDialect::registerTypes() {
+  addTypes<BoxType, BoxCharType, BoxProcType, CharacterType, fir::ComplexType,
+           FieldType, HeapType, fir::IntegerType, LenType, LogicalType,
+           PointerType, RealType, RecordType, ReferenceType, SequenceType,
+           ShapeType, ShapeShiftType, ShiftType, SliceType, TypeDescType,
+           fir::VectorType>();
 }

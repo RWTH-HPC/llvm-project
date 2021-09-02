@@ -229,6 +229,17 @@ the `SameVariadicOperandSize` or `AttrSizedOperandSegments` trait is needed to
 indicate that all variable length operands have the same number of dynamic
 values.
 
+#### VariadicOfVariadic operands
+
+To declare a variadic operand that has a variadic number of sub-ranges, wrap the
+`TypeConstraint` for the operand with `VariadicOfVariadic<...,
+"<segment-attribute-name>">`.
+
+The second field of the `VariadicOfVariadic` is the name of an `I32ElementsAttr`
+argument that contains the sizes of the variadic sub-ranges. This attribute will
+be used when determining the size of sub-ranges, or when updating the size of
+sub-ranges.
+
 #### Optional operands
 
 To declare an optional operand, wrap the `TypeConstraint` for the operand with
@@ -341,7 +352,7 @@ currently only be specified as the last successor in the successor list.
 Traits are operation properties that affect syntax or semantics. MLIR C++ models
 various traits in the `mlir::OpTrait` namespace.
 
-Both operation traits, [interfaces](Interfaces.md#utilizing-the-ods-framework),
+Both operation traits, [interfaces](Interfaces.md/#utilizing-the-ods-framework),
 and constraints involving multiple operands/attributes/results are provided as
 the second template parameter to the `Op` class. They should be deriving from
 the `OpTrait` class. See [Constraints](#constraints) for more information.
@@ -605,7 +616,7 @@ The available directives are as follows:
 *   `functional-type` ( inputs , results )
 
     -   Formats the `inputs` and `results` arguments as a
-        [function type](LangRef.md#function-type).
+        [function type](Dialects/Builtin.md/#functiontype).
     -   The constraints on `inputs` and `results` are the same as the `input` of
         the `type` directive.
 
@@ -717,6 +728,8 @@ declarative parameter to `parse` method argument is detailed below:
     -   Single: `OpAsmParser::OperandType &`
     -   Optional: `Optional<OpAsmParser::OperandType> &`
     -   Variadic: `SmallVectorImpl<OpAsmParser::OperandType> &`
+    -   VariadicOfVariadic:
+        `SmallVectorImpl<SmallVector<OpAsmParser::OperandType>> &`
 *   Ref Directives
     -   A reference directive is passed to the parser using the same mapping as
         the input operand. For example, a single region would be passed as a
@@ -731,6 +744,7 @@ declarative parameter to `parse` method argument is detailed below:
     -   Single: `Type &`
     -   Optional: `Type &`
     -   Variadic: `SmallVectorImpl<Type> &`
+    -   VariadicOfVariadic: `SmallVectorImpl<SmallVector<Type>> &`
 *   `attr-dict` Directive: `NamedAttrList &`
 
 When a variable is optional, the value should only be specified if the variable
@@ -749,6 +763,7 @@ declarative parameter to `print` method argument is detailed below:
     -   Single: `Value`
     -   Optional: `Value`
     -   Variadic: `OperandRange`
+    -   VariadicOfVariadic: `OperandRangeRange`
 *   Ref Directives
     -   A reference directive is passed to the printer using the same mapping as
         the input operand. For example, a single region would be passed as a
@@ -763,6 +778,7 @@ declarative parameter to `print` method argument is detailed below:
     -   Single: `Type`
     -   Optional: `Type`
     -   Variadic: `TypeRange`
+    -   VariadicOfVariadic: `TypeRangeRange`
 *   `attr-dict` Directive: `DictionaryAttr`
 
 When a variable is optional, the provided value may be null.
@@ -772,8 +788,13 @@ When a variable is optional, the provided value may be null.
 In certain situations operations may have "optional" information, e.g.
 attributes or an empty set of variadic operands. In these situations a section
 of the assembly format can be marked as `optional` based on the presence of this
-information. An optional group is defined by wrapping a set of elements within
-`()` followed by a `?` and has the following requirements:
+information. An optional group is defined as follows:
+
+```
+optional-group: `(` elements `)` (`:` `(` else-elements `)`)? `?`
+```
+
+The `elements` of an optional group have the following requirements:
 
 *   The first element of the group must either be a attribute, literal, operand,
     or region.
@@ -809,7 +830,7 @@ def ReturnOp : ... {
 
 ##### Unit Attributes
 
-In MLIR, the [`unit` Attribute](LangRef.md#unit-attribute) is special in that it
+In MLIR, the [`unit` Attribute](Dialects/Builtin.md/#unitattr) is special in that it
 only has one possible value, i.e. it derives meaning from its existence. When a
 unit attribute is used to anchor an optional group and is not the first element
 of the group, the presence of the unit attribute can be directly correlated with
@@ -835,6 +856,32 @@ foo.op is_read_only
 
 // When the unit attribute is not present:
 foo.op
+```
+
+##### Optional "else" Group
+
+Optional groups also have support for an "else" group of elements. These are
+elements that are parsed/printed if the `anchor` element of the optional group
+is *not* present. Unlike the main element group, the "else" group has no
+restriction on the first element and none of the elements may act as the
+`anchor` for the optional. An example is shown below:
+
+```tablegen
+def FooOp : ... {
+  let arguments = (ins UnitAttr:$foo);
+
+  let assemblyFormat = "attr-dict (`foo_is_present` $foo^):(`foo_is_absent`)?";
+}
+```
+
+would be formatted as such:
+
+```mlir
+// When the `foo` attribute is present:
+foo.op foo_is_present
+
+// When the `foo` attribute is not present:
+foo.op foo_is_absent
 ```
 
 #### Requirements
@@ -887,6 +934,13 @@ supported traits are: `AllTypesMatch`, `TypesMatchWith`, `SameTypeOperands`, and
 This boolean field indicate whether canonicalization patterns have been defined
 for this operation. If it is `1`, then `::getCanonicalizationPatterns()` should
 be defined.
+
+### `hasCanonicalizeMethod`
+
+When this boolean field is set to `true`, it indicates that the op implements a
+`canonicalize` method for simple "matchAndRewrite" style canonicalization
+patterns. If `hasCanonicalizer` is 0, then an implementation of
+`::getCanonicalizationPatterns()` is implemented to call this function.
 
 ### `hasFolder`
 
@@ -1441,8 +1495,9 @@ need allocation in the storage constructor, there are two options:
 ### TypeParameter tablegen class
 
 This is used to further specify attributes about each of the types parameters.
-It includes documentation (`summary` and `syntax`), the C++ type to use, and a
-custom allocator to use in the storage constructor method.
+It includes documentation (`summary` and `syntax`), the C++ type to use, a
+custom allocator to use in the storage constructor method, and a custom
+comparator to decide if two instances of the parameter type are equal.
 
 ```tablegen
 // DO NOT DO THIS!
@@ -1471,6 +1526,11 @@ The `allocator` code block has the following substitutions:
 
 -   `$_allocator` is the TypeStorageAllocator in which to allocate objects.
 -   `$_dst` is the variable in which to place the allocated data.
+
+The `comparator` code block has the following substitutions:
+
+-   `$_lhs` is an instance of the parameter type.
+-   `$_rhs` is an instance of the parameter type.
 
 MLIR includes several specialized classes for common situations:
 
@@ -1709,7 +1769,7 @@ very helpful way to understand and debug issues. To build `mlir-tblgen`, run
 `cmake --build . --target mlir-tblgen` in your build directory and find the
 `mlir-tblgen` binary in the `bin/` subdirectory. All the supported generators
 can be found via `mlir-tblgen --help`. For example, `--gen-op-decls` and
-`--gen-op-defs` as explained in [Generated C++ code](#generated-c++-code).
+`--gen-op-defs` as explained in [Generated C++ code](#generated-c-code).
 
 To see the generated code, invoke `mlir-tblgen` with a specific generator by
 providing include paths via `-I`. For example,
@@ -1765,7 +1825,7 @@ requirements that were desirable:
         will consider it.
 *   MLIR allows both defined and undefined ops.
     *   Defined ops should have fixed semantics and could have a corresponding
-        reference implementation defined using, for example, EDSC.
+        reference implementation defined.
     *   Dialects are under full control of the dialect owner and normally live
         with the framework of the dialect.
 *   The op's traits (e.g., commutative) are modelled along with the op in the
@@ -1800,6 +1860,6 @@ requirements that were desirable:
 [OpBase]: https://github.com/llvm/llvm-project/blob/main/mlir/include/mlir/IR/OpBase.td
 [OpDefinitionsGen]: https://github.com/llvm/llvm-project/blob/main/mlir/tools/mlir-tblgen/OpDefinitionsGen.cpp
 [EnumsGen]: https://github.com/llvm/llvm-project/blob/main/mlir/tools/mlir-tblgen/EnumsGen.cpp
-[StringAttr]: LangRef.md#string-attribute
-[IntegerAttr]: LangRef.md#integer-attribute
+[StringAttr]: Dialects/Builtin.md/#stringattr
+[IntegerAttr]: Dialects/Builtin.md/#integertype
 [AttrClasses]: https://github.com/llvm/llvm-project/blob/main/mlir/include/mlir/IR/Attributes.h

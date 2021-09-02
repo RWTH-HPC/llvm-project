@@ -244,25 +244,28 @@ static void getCLEnvVarOptions(std::string &EnvValue, llvm::StringSaver &Saver,
 }
 
 static void SetBackdoorDriverOutputsFromEnvVars(Driver &TheDriver) {
-  // Handle CC_PRINT_OPTIONS and CC_PRINT_OPTIONS_FILE.
-  TheDriver.CCPrintOptions = !!::getenv("CC_PRINT_OPTIONS");
-  if (TheDriver.CCPrintOptions)
-    TheDriver.CCPrintOptionsFilename = ::getenv("CC_PRINT_OPTIONS_FILE");
+  auto CheckEnvVar = [](const char *EnvOptSet, const char *EnvOptFile,
+                        std::string &OptFile) {
+    bool OptSet = !!::getenv(EnvOptSet);
+    if (OptSet) {
+      if (const char *Var = ::getenv(EnvOptFile))
+        OptFile = Var;
+    }
+    return OptSet;
+  };
 
-  // Handle CC_PRINT_HEADERS and CC_PRINT_HEADERS_FILE.
-  TheDriver.CCPrintHeaders = !!::getenv("CC_PRINT_HEADERS");
-  if (TheDriver.CCPrintHeaders)
-    TheDriver.CCPrintHeadersFilename = ::getenv("CC_PRINT_HEADERS_FILE");
-
-  // Handle CC_LOG_DIAGNOSTICS and CC_LOG_DIAGNOSTICS_FILE.
-  TheDriver.CCLogDiagnostics = !!::getenv("CC_LOG_DIAGNOSTICS");
-  if (TheDriver.CCLogDiagnostics)
-    TheDriver.CCLogDiagnosticsFilename = ::getenv("CC_LOG_DIAGNOSTICS_FILE");
-
-  // Handle CC_PRINT_PROC_STAT and CC_PRINT_PROC_STAT_FILE.
-  TheDriver.CCPrintProcessStats = !!::getenv("CC_PRINT_PROC_STAT");
-  if (TheDriver.CCPrintProcessStats)
-    TheDriver.CCPrintStatReportFilename = ::getenv("CC_PRINT_PROC_STAT_FILE");
+  TheDriver.CCPrintOptions =
+      CheckEnvVar("CC_PRINT_OPTIONS", "CC_PRINT_OPTIONS_FILE",
+                  TheDriver.CCPrintOptionsFilename);
+  TheDriver.CCPrintHeaders =
+      CheckEnvVar("CC_PRINT_HEADERS", "CC_PRINT_HEADERS_FILE",
+                  TheDriver.CCPrintHeadersFilename);
+  TheDriver.CCLogDiagnostics =
+      CheckEnvVar("CC_LOG_DIAGNOSTICS", "CC_LOG_DIAGNOSTICS_FILE",
+                  TheDriver.CCLogDiagnosticsFilename);
+  TheDriver.CCPrintProcessStats =
+      CheckEnvVar("CC_PRINT_PROC_STAT", "CC_PRINT_PROC_STAT_FILE",
+                  TheDriver.CCPrintStatReportFilename);
 }
 
 static void FixupDiagPrefixExeName(TextDiagnosticPrinter *DiagClient,
@@ -270,7 +273,7 @@ static void FixupDiagPrefixExeName(TextDiagnosticPrinter *DiagClient,
   // If the clang binary happens to be named cl.exe for compatibility reasons,
   // use clang-cl.exe as the prefix to avoid confusion between clang and MSVC.
   StringRef ExeBasename(llvm::sys::path::stem(Path));
-  if (ExeBasename.equals_lower("cl"))
+  if (ExeBasename.equals_insensitive("cl"))
     ExeBasename = "clang-cl";
   DiagClient->setPrefix(std::string(ExeBasename));
 }
@@ -357,7 +360,6 @@ int main(int Argc, const char **Argv) {
     return 1;
 
   llvm::InitializeAllTargets();
-  auto TargetAndMode = ToolChain::getTargetAndModeFromProgramName(Args[0]);
 
   llvm::BumpPtrAllocator A;
   llvm::StringSaver Saver(A);
@@ -369,13 +371,8 @@ int main(int Argc, const char **Argv) {
   // have to manually search for a --driver-mode=cl argument the hard way.
   // Finally, our -cc1 tools don't care which tokenization mode we use because
   // response files written by clang will tokenize the same way in either mode.
-  bool ClangCLMode = false;
-  if (StringRef(TargetAndMode.DriverMode).equals("--driver-mode=cl") ||
-      llvm::find_if(Args, [](const char *F) {
-        return F && strcmp(F, "--driver-mode=cl") == 0;
-      }) != Args.end()) {
-    ClangCLMode = true;
-  }
+  bool ClangCLMode =
+      IsClangCL(getDriverMode(Args[0], llvm::makeArrayRef(Args).slice(1)));
   enum { Default, POSIX, Windows } RSPQuoting = Default;
   for (const char *F : Args) {
     if (strcmp(F, "--rsp-quoting=posix") == 0)
@@ -419,10 +416,10 @@ int main(int Argc, const char **Argv) {
     // Skip end-of-line response file markers
     if (Args[i] == nullptr)
       continue;
-    if (StringRef(Args[i]) == "-no-canonical-prefixes") {
+    if (StringRef(Args[i]) == "-canonical-prefixes")
+      CanonicalPrefixes = true;
+    else if (StringRef(Args[i]) == "-no-canonical-prefixes")
       CanonicalPrefixes = false;
-      break;
-    }
   }
 
   // Handle CL and _CL_ which permits additional command line options to be
@@ -487,6 +484,7 @@ int main(int Argc, const char **Argv) {
 
   Driver TheDriver(Path, llvm::sys::getDefaultTargetTriple(), Diags);
   SetInstallDir(Args, TheDriver, CanonicalPrefixes);
+  auto TargetAndMode = ToolChain::getTargetAndModeFromProgramName(Args[0]);
   TheDriver.setTargetAndMode(TargetAndMode);
 
   insertTargetAndModeArgs(TargetAndMode, Args, SavedStrings);

@@ -1,5 +1,5 @@
 ====================================================
-Extra Clang Tools 13.0.0 (In-Progress) Release Notes
+Extra Clang Tools 14.0.0 (In-Progress) Release Notes
 ====================================================
 
 .. contents::
@@ -10,7 +10,7 @@ Written by the `LLVM Team <https://llvm.org/>`_
 
 .. warning::
 
-   These are in-progress notes for the upcoming Extra Clang Tools 13 release.
+   These are in-progress notes for the upcoming Extra Clang Tools 14 release.
    Release notes for previous releases can be found on
    `the Download Page <https://releases.llvm.org/download.html>`_.
 
@@ -18,7 +18,7 @@ Introduction
 ============
 
 This document contains the release notes for the Extra Clang Tools, part of the
-Clang release 13.0.0. Here we describe the status of the Extra Clang Tools in
+Clang release 14.0.0. Here we describe the status of the Extra Clang Tools in
 some detail, including major improvements from the previous release and new
 feature work. All LLVM releases may be downloaded from the `LLVM releases web
 site <https://llvm.org/releases/>`_.
@@ -32,7 +32,7 @@ main Clang web page, this document applies to the *next* release, not
 the current one. To see the release notes for a specific release, please
 see the `releases page <https://llvm.org/releases/>`_.
 
-What's New in Extra Clang Tools 13.0.0?
+What's New in Extra Clang Tools 14.0.0?
 =======================================
 
 Some of the major new features and improvements to Extra Clang Tools are listed
@@ -67,60 +67,39 @@ The improvements are...
 Improvements to clang-tidy
 --------------------------
 
-- The `run-clang-tidy.py` helper script is now installed in `bin/` as
-  `run-clang-tidy`. It was previously installed in `share/clang/`.
-
-- Added command line option `--fix-notes` to apply fixes found in notes
-  attached to warnings. These are typically cases where we are less confident
-  the fix will have the desired effect.
+The improvements are...
 
 New checks
 ^^^^^^^^^^
 
-- New :doc:`concurrency-thread-canceltype-asynchronous
-  <clang-tidy/checks/concurrency-thread-canceltype-asynchronous>` check.
+- New :doc:`bugprone-suspicious-memory-comparison
+  <clang-tidy/checks/bugprone-suspicious-memory-comparison>` check.
 
-  Finds ``pthread_setcanceltype`` function calls where a thread's cancellation
-  type is set to asynchronous.
+  Finds potentially incorrect calls to ``memcmp()`` based on properties of the arguments.
 
-- New :doc:`cppcoreguidelines-prefer-member-initializer
-  <clang-tidy/checks/cppcoreguidelines-prefer-member-initializer>` check.
+- New :doc:`readability-identifier-length
+  <clang-tidy/checks/readability-identifier-length>` check.
 
-  Finds member initializations in the constructor body which can be placed into
-  the initialization list instead.
+  Reports identifiers whose names are too short. Currently checks local variables and function parameters only.
 
 New check aliases
 ^^^^^^^^^^^^^^^^^
 
-- New alias :doc:`cert-pos47-c
-  <clang-tidy/checks/cert-pos47-c>` to
-  :doc:`concurrency-thread-canceltype-asynchronous
-  <clang-tidy/checks/concurrency-thread-canceltype-asynchronous>` was added.
+- New alias :doc:`cert-exp42-c
+  <clang-tidy/checks/cert-exp42-c>` to
+  :doc:`bugprone-suspicious-memory-comparison
+  <clang-tidy/checks/bugprone-suspicious-memory-comparison>` was added.
+
+- New alias :doc:`cert-flp37-c
+  <clang-tidy/checks/cert-flp37-c>` to
+  :doc:`bugprone-suspicious-memory-comparison
+  <clang-tidy/checks/bugprone-suspicious-memory-comparison>` was added.
 
 Changes in existing checks
 ^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-- Improved :doc:`bugprone-signal-handler
-  <clang-tidy/checks/bugprone-signal-handler>` check.
-
-  Added an option to choose the set of allowed functions.
-
-- Improved :doc:`readability-uniqueptr-delete-release
-  <clang-tidy/checks/readability-uniqueptr-delete-release>` check.
-
-  Added an option to choose whether to refactor by calling the ``reset`` member
-  function or assignment to ``nullptr``.
-  Added support for pointers to ``std::unique_ptr``.
-
-Deprecated checks
-^^^^^^^^^^^^^^^^^
-
-- The :doc:`readability-deleted-default
-  <clang-tidy/checks/readability-deleted-default>` check has been deprecated.
-  
-  The clang warning `Wdefaulted-function-deleted
-  <https://clang.llvm.org/docs/DiagnosticsReference.html#wdefaulted-function-deleted>`_
-  will diagnose the same issues and is enabled by default.
+Removed checks
+^^^^^^^^^^^^^^
 
 Improvements to include-fixer
 -----------------------------

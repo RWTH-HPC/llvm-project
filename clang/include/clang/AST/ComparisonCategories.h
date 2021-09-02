@@ -19,6 +19,7 @@
 #include "llvm/ADT/DenseMap.h"
 #include <array>
 #include <cassert>
+#include <vector>
 
 namespace llvm {
   class StringRef;
@@ -114,8 +115,7 @@ private:
 public:
   /// The declaration for the comparison category type from the
   /// standard library.
-  // FIXME: Make this const
-  CXXRecordDecl *Record = nullptr;
+  const CXXRecordDecl *Record = nullptr;
 
   /// The Kind of the comparison category type
   ComparisonCategoryType Kind;

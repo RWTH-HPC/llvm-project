@@ -8,6 +8,7 @@
 
 #include "mlir/TableGen/AttrOrTypeDef.h"
 #include "mlir/TableGen/Dialect.h"
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/TableGen/Error.h"
 #include "llvm/TableGen/Record.h"
@@ -45,10 +46,15 @@ AttrOrTypeDef::AttrOrTypeDef(const llvm::Record *def) : def(def) {
       }
       builders.emplace_back(builder);
     }
-  } else if (skipDefaultBuilders()) {
-    PrintFatalError(
-        def->getLoc(),
-        "default builders are skipped and no custom builders provided");
+  }
+
+  // Populate the traits.
+  if (auto *traitList = def->getValueAsListInit("traits")) {
+    SmallPtrSet<const llvm::Init *, 32> traitSet;
+    traits.reserve(traitSet.size());
+    for (auto *traitInit : *traitList)
+      if (traitSet.insert(traitInit).second)
+        traits.push_back(Trait::create(traitInit));
   }
 }
 
@@ -177,22 +183,18 @@ Optional<StringRef> AttrOrTypeParameter::getAllocator() const {
   llvm::Init *parameterType = def->getArg(index);
   if (isa<llvm::StringInit>(parameterType))
     return Optional<StringRef>();
+  if (auto *param = dyn_cast<llvm::DefInit>(parameterType))
+    return param->getDef()->getValueAsOptionalString("allocator");
+  llvm::PrintFatalError("Parameters DAG arguments must be either strings or "
+                        "defs which inherit from AttrOrTypeParameter\n");
+}
 
-  if (auto *param = dyn_cast<llvm::DefInit>(parameterType)) {
-    llvm::RecordVal *code = param->getDef()->getValue("allocator");
-    if (!code)
-      return Optional<StringRef>();
-    if (llvm::StringInit *ci = dyn_cast<llvm::StringInit>(code->getValue()))
-      return ci->getValue();
-    if (isa<llvm::UnsetInit>(code->getValue()))
-      return Optional<StringRef>();
-
-    llvm::PrintFatalError(
-        param->getDef()->getLoc(),
-        "Record `" + def->getArgName(index)->getValue() +
-            "', field `printer' does not have a code initializer!");
-  }
-
+Optional<StringRef> AttrOrTypeParameter::getComparator() const {
+  llvm::Init *parameterType = def->getArg(index);
+  if (isa<llvm::StringInit>(parameterType))
+    return Optional<StringRef>();
+  if (auto *param = dyn_cast<llvm::DefInit>(parameterType))
+    return param->getDef()->getValueAsOptionalString("comparator");
   llvm::PrintFatalError("Parameters DAG arguments must be either strings or "
                         "defs which inherit from AttrOrTypeParameter\n");
 }
@@ -206,6 +208,15 @@ StringRef AttrOrTypeParameter::getCppType() const {
   llvm::PrintFatalError(
       "Parameters DAG arguments must be either strings or defs "
       "which inherit from AttrOrTypeParameter\n");
+}
+
+StringRef AttrOrTypeParameter::getCppAccessorType() const {
+  if (auto *param = dyn_cast<llvm::DefInit>(def->getArg(index))) {
+    if (Optional<StringRef> type =
+            param->getDef()->getValueAsOptionalString("cppAccessorType"))
+      return *type;
+  }
+  return getCppType();
 }
 
 Optional<StringRef> AttrOrTypeParameter::getSummary() const {

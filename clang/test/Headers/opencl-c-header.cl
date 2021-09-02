@@ -2,6 +2,7 @@
 // RUN: %clang_cc1 -O0 -triple spir-unknown-unknown -internal-isystem ../../lib/Headers -include opencl-c.h -emit-llvm -o - %s -verify -cl-std=CL1.1 | FileCheck %s
 // RUN: %clang_cc1 -O0 -triple spir-unknown-unknown -internal-isystem ../../lib/Headers -include opencl-c.h -emit-llvm -o - %s -verify -cl-std=CL1.2 | FileCheck %s
 // RUN: %clang_cc1 -O0 -triple spir-unknown-unknown -internal-isystem ../../lib/Headers -include opencl-c.h -emit-llvm -o - %s -verify -cl-std=clc++ | FileCheck %s --check-prefix=CHECK20
+// RUN: %clang_cc1 -O0 -triple spir-unknown-unknown -internal-isystem ../../lib/Headers -include opencl-c.h -emit-llvm -o - %s -verify -cl-std=CL3.0 | FileCheck %s
 
 // Test including the default header as a module.
 // The module should be compiled only once and loaded from cache afterwards.
@@ -81,25 +82,23 @@ void test_atomics(__generic volatile unsigned int* a) {
 #endif
 
 // Verify that ATOMIC_VAR_INIT is defined.
-#if defined(__OPENCL_CPP_VERSION__) || (__OPENCL_C_VERSION__ >= CL_VERSION_2_0)
+#if defined(__OPENCL_CPP_VERSION__) || (__OPENCL_C_VERSION__ == CL_VERSION_2_0)
 global atomic_int z = ATOMIC_VAR_INIT(99);
 #endif //__OPENCL_C_VERSION__
 // CHECK-MOD: Reading modules
 
 // Check that extension macros are defined correctly.
 
-// FIXME: this should not be defined for all targets
-// Verify that non-builtin cl_intel_planar_yuv extension is defined from
-// OpenCL 1.2 onwards.
+// For SPIR all extensions are supported.
+#if defined(__SPIR__)
+
+// Verify that cl_intel_planar_yuv extension is defined from OpenCL 1.2 onwards.
 #if defined(__OPENCL_CPP_VERSION__) || (__OPENCL_C_VERSION__ >= CL_VERSION_1_2)
 // expected-no-diagnostics
 #else //__OPENCL_C_VERSION__
 // expected-warning@+2{{unknown OpenCL extension 'cl_intel_planar_yuv' - ignoring}}
 #endif //__OPENCL_C_VERSION__
 #pragma OPENCL EXTENSION cl_intel_planar_yuv : enable
-
-// For SPIR all extensions are supported.
-#if defined(__SPIR__)
 
 #if (defined(__OPENCL_CPP_VERSION__) || __OPENCL_C_VERSION__ >= 200)
 
@@ -123,6 +122,18 @@ global atomic_int z = ATOMIC_VAR_INIT(99);
 #endif
 #if cl_khr_subgroup_clustered_reduce != 1
 #error "Incorrectly defined cl_khr_subgroup_clustered_reduce"
+#endif
+#if cl_khr_extended_bit_ops != 1
+#error "Incorrectly defined cl_khr_extended_bit_ops"
+#endif
+#if cl_khr_integer_dot_product != 1
+#error "Incorrectly defined cl_khr_integer_dot_product"
+#endif
+#if __opencl_c_integer_dot_product_input_4x8bit != 1
+#error "Incorrectly defined __opencl_c_integer_dot_product_input_4x8bit"
+#endif
+#if __opencl_c_integer_dot_product_input_4x8bit_packed != 1
+#error "Incorrectly defined __opencl_c_integer_dot_product_input_4x8bit_packed"
 #endif
 
 #else
@@ -148,11 +159,29 @@ global atomic_int z = ATOMIC_VAR_INIT(99);
 #ifdef cl_khr_subgroup_clustered_reduce
 #error "Incorrect cl_khr_subgroup_clustered_reduce define"
 #endif
+#ifdef cl_khr_extended_bit_ops
+#error "Incorrect cl_khr_extended_bit_ops define"
+#endif
+#ifdef cl_khr_integer_dot_product
+#error "Incorrect cl_khr_integer_dot_product define"
+#endif
+#ifdef __opencl_c_integer_dot_product_input_4x8bit
+#error "Incorrect __opencl_c_integer_dot_product_input_4x8bit define"
+#endif
+#ifdef __opencl_c_integer_dot_product_input_4x8bit_packed
+#error "Incorrect __opencl_c_integer_dot_product_input_4x8bit_packed define"
+#endif
 
 #endif //(defined(__OPENCL_CPP_VERSION__) || __OPENCL_C_VERSION__ >= 200)
 
 // OpenCL C features.
-#if (defined(__OPENCL_CPP_VERSION__) || __OPENCL_C_VERSION__ == 200)
+#if (__OPENCL_CPP_VERSION__ == 202100 || __OPENCL_C_VERSION__ == 300)
+
+#if __opencl_c_atomic_scope_all_devices != 1
+#error "Incorrectly defined feature macro __opencl_c_atomic_scope_all_devices"
+#endif
+
+#elif (__OPENCL_CPP_VERSION__ == 100 || __OPENCL_C_VERSION__ == 200)
 
 #ifndef  __opencl_c_pipes
 #error "Feature macro __opencl_c_pipes should be defined"
@@ -191,48 +220,48 @@ global atomic_int z = ATOMIC_VAR_INIT(99);
 #elif (__OPENCL_C_VERSION__ < 200)
 
 #ifdef  __opencl_c_pipes
-#error "Incorret feature macro __opencl_c_pipes define"
+#error "Incorrect feature macro __opencl_c_pipes define"
 #endif
 #ifdef __opencl_c_generic_address_space
-#error "Incorret feature macro __opencl_c_generic_address_space define"
+#error "Incorrect feature macro __opencl_c_generic_address_space define"
 #endif
 #ifdef __opencl_c_work_group_collective_functions
-#error "Incorret feature macro __opencl_c_work_group_collective_functions define"
+#error "Incorrect feature macro __opencl_c_work_group_collective_functions define"
 #endif
 #ifdef __opencl_c_atomic_order_acq_rel
-#error "Incorret feature macro __opencl_c_atomic_order_acq_rel define"
+#error "Incorrect feature macro __opencl_c_atomic_order_acq_rel define"
 #endif
 #ifdef __opencl_c_atomic_order_seq_cst
-#error "Incorret feature macro __opencl_c_atomic_order_seq_cst define"
+#error "Incorrect feature macro __opencl_c_atomic_order_seq_cst define"
 #endif
 #ifdef __opencl_c_atomic_scope_device
-#error "Incorret feature macro __opencl_c_atomic_scope_device define"
+#error "Incorrect feature macro __opencl_c_atomic_scope_device define"
 #endif
 #ifdef __opencl_c_atomic_scope_all_devices
-#error "Incorret feature macro __opencl_c_atomic_scope_all_devices define"
+#error "Incorrect feature macro __opencl_c_atomic_scope_all_devices define"
 #endif
 #ifdef __opencl_c_device_enqueue
-#error "Incorret feature macro __opencl_c_device_enqueue define"
+#error "Incorrect feature macro __opencl_c_device_enqueue define"
 #endif
 #ifdef __opencl_c_read_write_images
-#error "Incorret feature macro __opencl_c_read_write_images define"
+#error "Incorrect feature macro __opencl_c_read_write_images define"
 #endif
 #ifdef __opencl_c_program_scope_global_variables
-#error "Incorret feature macro __opencl_c_program_scope_global_variables define"
+#error "Incorrect feature macro __opencl_c_program_scope_global_variables define"
 #endif
 #ifdef __opencl_c_images
-#error "Incorret feature macro __opencl_c_images define"
+#error "Incorrect feature macro __opencl_c_images define"
 #endif
 #ifdef __opencl_c_3d_image_writes
-#error "Incorret feature macro __opencl_c_3d_image_writes define"
+#error "Incorrect feature macro __opencl_c_3d_image_writes define"
 #endif
 #ifdef __opencl_c_fp64
-#error "Incorret feature macro __opencl_c_fp64 define"
+#error "Incorrect feature macro __opencl_c_fp64 define"
 #endif
 #ifdef __opencl_c_subgroups
-#error "Incorret feature macro __opencl_c_subgroups define"
+#error "Incorrect feature macro __opencl_c_subgroups define"
 #endif
 
-#endif //(defined(__OPENCL_CPP_VERSION__) || __OPENCL_C_VERSION__ == 200)
+#endif // (__OPENCL_CPP_VERSION__ == 202100 || __OPENCL_C_VERSION__ == 300)
 
 #endif // defined(__SPIR__)

@@ -104,15 +104,47 @@ public:
   /// affine map (d0, ..., dn) -> (dp, ..., dn) on the most minor dimensions.
   bool isMinorIdentity() const;
 
+  /// Returns true if this affine map is a minor identity up to broadcasted
+  /// dimensions which are indicated by value 0 in the result. If
+  /// `broadcastedDims` is not null, it will be populated with the indices of
+  /// the broadcasted dimensions in the result array.
+  /// Example: affine_map<(d0, d1, d2, d3, d4) -> (0, d2, 0, d4)>
+  ///          (`broadcastedDims` will contain [0, 2])
+  bool isMinorIdentityWithBroadcasting(
+      SmallVectorImpl<unsigned> *broadcastedDims = nullptr) const;
+
+  /// Return true if this affine map can be converted to a minor identity with
+  /// broadcast by doing a permute. Return a permutation (there may be
+  /// several) to apply to get to a minor identity with broadcasts.
+  /// Ex:
+  ///  * (d0, d1, d2) -> (0, d1) maps to minor identity (d1, 0 = d2) with
+  ///  perm = [1, 0] and broadcast d2
+  ///  * (d0, d1, d2) -> (d0, 0) cannot be mapped to a minor identity by
+  ///  permutation + broadcast
+  ///  * (d0, d1, d2, d3) -> (0, d1, d3) maps to minor identity (d1, 0 = d2, d3)
+  ///  with perm = [1, 0, 2] and broadcast d2
+  ///  * (d0, d1) -> (d1, 0, 0, d0) maps to minor identity (d0, d1) with extra
+  ///  leading broadcat dimensions. The map returned would be (0, 0, d0, d1)
+  ///  with perm = [3, 0, 1, 2]
+  bool isPermutationOfMinorIdentityWithBroadcasting(
+      SmallVectorImpl<unsigned> &permutedDims) const;
+
   /// Returns true if this affine map is an empty map, i.e., () -> ().
   bool isEmpty() const;
 
   /// Returns true if this affine map is a single result constant function.
   bool isSingleConstant() const;
 
+  /// Returns true if this affine map has only constant results.
+  bool isConstant() const;
+
   /// Returns the constant result of this map. This methods asserts that the map
   /// has a single constant result.
   int64_t getSingleConstantResult() const;
+
+  /// Returns the constant results of this map. This method asserts that the map
+  /// has all constant results.
+  SmallVector<int64_t> getConstantResults() const;
 
   // Prints affine map to 'os'.
   void print(raw_ostream &os) const;
@@ -129,6 +161,10 @@ public:
   /// Extracts the position of the dimensional expression at the given result,
   /// when the caller knows it is safe to do so.
   unsigned getDimPosition(unsigned idx) const;
+
+  /// Extracts the permuted position where given input index resides.
+  /// Fails when called on a non-permutation.
+  unsigned getPermutedPosition(unsigned input) const;
 
   /// Return true if any affine expression involves AffineDimExpr `position`.
   bool isFunctionOfDim(unsigned position) const {
@@ -165,29 +201,38 @@ public:
                     unsigned numResultDims, unsigned numResultSyms) const;
 
   /// Sparse replace method. Apply AffineExpr::replace(`map`) to each of the
+  /// results and return a new AffineMap with the new results and with inferred
+  /// number of dims and symbols.
+  AffineMap replace(const DenseMap<AffineExpr, AffineExpr> &map) const;
+
+  /// Sparse replace method. Apply AffineExpr::replace(`map`) to each of the
   /// results and return a new AffineMap with the new results and with the
   /// specified number of dims and symbols.
   AffineMap replace(const DenseMap<AffineExpr, AffineExpr> &map,
                     unsigned numResultDims, unsigned numResultSyms) const;
 
-  /// Replace dims[0 .. numDims - 1] by dims[shift .. shift + numDims - 1].
-  AffineMap shiftDims(unsigned shift) const {
-    return AffineMap::get(
-        getNumDims() + shift, getNumSymbols(),
-        llvm::to_vector<4>(llvm::map_range(
-            getResults(),
-            [&](AffineExpr e) { return e.shiftDims(getNumDims(), shift); })),
-        getContext());
+  /// Replace dims[offset ... numDims)
+  /// by dims[offset + shift ... shift + numDims).
+  AffineMap shiftDims(unsigned shift, unsigned offset = 0) const {
+    assert(offset <= getNumDims());
+    return AffineMap::get(getNumDims() + shift, getNumSymbols(),
+                          llvm::to_vector<4>(llvm::map_range(
+                              getResults(),
+                              [&](AffineExpr e) {
+                                return e.shiftDims(getNumDims(), shift, offset);
+                              })),
+                          getContext());
   }
 
-  /// Replace symbols[0 .. numSymbols - 1] by
-  ///         symbols[shift .. shift + numSymbols - 1].
-  AffineMap shiftSymbols(unsigned shift) const {
+  /// Replace symbols[offset ... numSymbols)
+  /// by symbols[offset + shift ... shift + numSymbols).
+  AffineMap shiftSymbols(unsigned shift, unsigned offset = 0) const {
     return AffineMap::get(getNumDims(), getNumSymbols() + shift,
                           llvm::to_vector<4>(llvm::map_range(
                               getResults(),
                               [&](AffineExpr e) {
-                                return e.shiftSymbols(getNumSymbols(), shift);
+                                return e.shiftSymbols(getNumSymbols(), shift,
+                                                      offset);
                               })),
                           getContext());
   }
@@ -236,6 +281,9 @@ public:
 
   /// Returns the map consisting of the `resultPos` subset.
   AffineMap getSubMap(ArrayRef<unsigned> resultPos) const;
+
+  /// Returns the map consisting of `length` expressions starting from `start`.
+  AffineMap getSliceMap(unsigned start, unsigned length) const;
 
   /// Returns the map consisting of the most major `numResults` results.
   /// Returns the null AffineMap if `numResults` == 0.
@@ -315,12 +363,22 @@ AffineMap simplifyAffineMap(AffineMap map);
 /// Drop the dims that are not used.
 AffineMap compressUnusedDims(AffineMap map);
 
+/// Drop the dims that are not used by any of the individual maps in `maps`.
+/// Asserts that all maps in `maps` are normalized to the same number of
+/// dims and symbols.
+SmallVector<AffineMap> compressUnusedDims(ArrayRef<AffineMap> maps);
+
 /// Drop the dims that are not listed in `unusedDims`.
 AffineMap compressDims(AffineMap map,
                        const llvm::SmallDenseSet<unsigned> &unusedDims);
 
 /// Drop the symbols that are not used.
 AffineMap compressUnusedSymbols(AffineMap map);
+
+/// Drop the symbols that are not used by any of the individual maps in `maps`.
+/// Asserts that all maps in `maps` are normalized to the same number of
+/// dims and symbols.
+SmallVector<AffineMap> compressUnusedSymbols(ArrayRef<AffineMap> maps);
 
 /// Drop the symbols that are not listed in `unusedSymbols`.
 AffineMap compressSymbols(AffineMap map,
@@ -366,6 +424,48 @@ AffineMap removeDuplicateExprs(AffineMap map);
 /// ```
 AffineMap inversePermutation(AffineMap map);
 
+/// Return the reverse map of a projected permutation where the projected
+/// dimensions are transformed into 0s.
+///
+/// Prerequisites: `map` must be a projected permuation.
+///
+/// Example 1:
+///
+/// ```mlir
+///    affine_map<(d0, d1, d2, d3) -> (d2, d0)>
+/// ```
+///
+/// returns:
+///
+/// ```mlir
+///    affine_map<(d0, d1) -> (d1, 0, d0, 0)>
+/// ```
+///
+/// Example 2:
+///
+/// ```mlir
+///    affine_map<(d0, d1, d2, d3) -> (d0, d3)>
+/// ```
+///
+/// returns:
+///
+/// ```mlir
+///    affine_map<(d0, d1) -> (d0, 0, 0, d1)>
+/// ```
+///
+/// Example 3:
+///
+/// ```mlir
+///    affine_map<(d0, d1, d2, d3) -> (d2)>
+/// ```
+///
+/// returns:
+///
+/// ```mlir
+///    affine_map<(d0) -> (0, 0, d0, 0)>
+/// ```
+AffineMap inverseAndBroadcastProjectedPermuation(AffineMap map);
+
 /// Concatenates a list of `maps` into a single AffineMap, stepping over
 /// potentially empty maps. Assumes each of the underlying map has 0 symbols.
 /// The resulting map has a number of dims equal to the max of `maps`' dims and
@@ -410,6 +510,20 @@ AffineMap concatAffineMaps(ArrayRef<AffineMap> maps);
 AffineMap
 getProjectedMap(AffineMap map,
                 const llvm::SmallDenseSet<unsigned> &projectedDimensions);
+
+/// Apply a permutation from `map` to `source` and return the result.
+template <typename T>
+SmallVector<T> applyPermutationMap(AffineMap map, llvm::ArrayRef<T> source) {
+  assert(map.isProjectedPermutation());
+  assert(map.getNumInputs() == source.size());
+  SmallVector<T> result;
+  result.reserve(map.getNumResults());
+  for (unsigned i = 0, e = map.getNumResults(); i < e; ++i) {
+    unsigned dim = map.getDimPosition(i);
+    result.push_back(source[dim]);
+  }
+  return result;
+}
 
 inline raw_ostream &operator<<(raw_ostream &os, AffineMap map) {
   map.print(os);

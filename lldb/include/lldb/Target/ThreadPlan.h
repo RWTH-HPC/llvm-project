@@ -81,7 +81,7 @@ namespace lldb_private {
 //
 //  Cleaning up after your plans:
 //
-//  When the plan is moved from the plan stack its WillPop method is always
+//  When the plan is moved from the plan stack its DidPop method is always
 //  called, no matter why.  Once it is moved off the plan stack it is done, and
 //  won't get a chance to run again.  So you should undo anything that affects
 //  target state in this method.  But be sure to leave the plan able to
@@ -413,7 +413,7 @@ public:
 
   virtual void DidPush();
 
-  virtual void WillPop();
+  virtual void DidPop();
 
   ThreadPlanKind GetKind() const { return m_kind; }
 
@@ -494,7 +494,7 @@ protected:
   // another thread plan is never either of the above.
   void PushPlan(lldb::ThreadPlanSP &thread_plan_sp) {
     GetThread().PushPlan(thread_plan_sp);
-    thread_plan_sp->SetPrivate(false);
+    thread_plan_sp->SetPrivate(true);
     thread_plan_sp->SetIsMasterPlan(false);
   }
 

@@ -1,5 +1,14 @@
 // RUN: mlir-translate -mlir-to-llvmir -split-input-file %s | FileCheck %s
 
+// CHECK: @global_aligned32 = private global i64 42, align 32
+"llvm.mlir.global"() ({}) {sym_name = "global_aligned32", type = i64, value = 42 : i64, linkage = 0, alignment = 32} : () -> ()
+
+// CHECK: @global_aligned64 = private global i64 42, align 64
+llvm.mlir.global private @global_aligned64(42 : i64) {alignment = 64 : i64} : i64
+
+// CHECK: @global_aligned64_native = private global i64 42, align 64
+llvm.mlir.global private @global_aligned64_native(42 : i64) { alignment = 64 } : i64
+
 // CHECK: @i32_global = internal global i32 42
 llvm.mlir.global internal @i32_global(42: i32) : i32
 
@@ -8,6 +17,9 @@ llvm.mlir.global internal constant @i32_const(52: i53) : i53
 
 // CHECK: @int_global_array = internal global [3 x i32] [i32 62, i32 62, i32 62]
 llvm.mlir.global internal @int_global_array(dense<62> : vector<3xi32>) : !llvm.array<3 x i32>
+
+// CHECK: @int_global_array_zero_elements = internal constant [3 x [0 x [4 x float]]] zeroinitializer
+llvm.mlir.global internal constant @int_global_array_zero_elements(dense<> : tensor<3x0x4xf32>) : !llvm.array<3 x array<0 x array<4 x f32>>>
 
 // CHECK: @i32_global_addr_space = internal addrspace(7) global i32 62
 llvm.mlir.global internal @i32_global_addr_space(62: i32) {addr_space = 7 : i32} : i32
@@ -23,6 +35,12 @@ llvm.mlir.global internal constant @string_const("foobar") : !llvm.array<6 x i8>
 
 // CHECK: @int_global_undef = internal global i64 undef
 llvm.mlir.global internal @int_global_undef() : i64
+
+// CHECK: @explicit_undef = global i32 undef
+llvm.mlir.global external @explicit_undef() : i32 {
+  %0 = llvm.mlir.undef : i32
+  llvm.return %0 : i32
+}
 
 // CHECK: @int_gep = internal constant i32* getelementptr (i32, i32* @i32_global, i32 2)
 llvm.mlir.global internal constant @int_gep() : !llvm.ptr<i32> {
@@ -59,6 +77,30 @@ llvm.mlir.global weak_odr @weak_odr(42 : i32) : i32
 // CHECK: @external = external global i32
 llvm.mlir.global external @external() : i32
 
+//
+// UnnamedAddr attribute.
+//
+
+// CHECK: @no_unnamed_addr = private constant i64 42
+llvm.mlir.global private constant @no_unnamed_addr(42 : i64) : i64
+// CHECK: @local_unnamed_addr = private local_unnamed_addr constant i64 42
+llvm.mlir.global private local_unnamed_addr constant @local_unnamed_addr(42 : i64) : i64
+// CHECK: @unnamed_addr = private unnamed_addr constant i64 42
+llvm.mlir.global private unnamed_addr constant @unnamed_addr(42 : i64) : i64
+
+//
+// dso_local attribute.
+//
+
+llvm.mlir.global @has_dso_local(42 : i64) {dso_local} : i64
+// CHECK: @has_dso_local = dso_local global i64 42
+
+//
+// Section attribute.
+//
+
+// CHECK: @sectionvar = internal constant [10 x i8] c"teststring", section ".mysection"
+llvm.mlir.global internal constant @sectionvar("teststring")  {section = ".mysection"}: !llvm.array<10 x i8>
 
 //
 // Declarations of the allocation functions to be linked against. These are
@@ -399,6 +441,15 @@ llvm.func @more_imperfectly_nested_loops() {
 
 // CHECK: define internal void @func_internal
 llvm.func internal @func_internal() {
+  llvm.return
+}
+
+//
+// dso_local attribute.
+//
+
+// CHECK: define dso_local void @dso_local_func
+llvm.func @dso_local_func() attributes {dso_local} {
   llvm.return
 }
 
@@ -935,7 +986,7 @@ llvm.func @cond_br_arguments(%arg0: i1, %arg1: i1) {
 }
 
 // CHECK-LABEL: define void @llvm_noalias(float* noalias {{%*.}})
-llvm.func @llvm_noalias(%arg0: !llvm.ptr<f32> {llvm.noalias = true}) {
+llvm.func @llvm_noalias(%arg0: !llvm.ptr<f32> {llvm.noalias}) {
   llvm.return
 }
 
@@ -988,6 +1039,18 @@ llvm.func @stringconstant() -> !llvm.array<12 x i8> {
   %1 = llvm.mlir.constant("Hello world!") : !llvm.array<12 x i8>
   // CHECK: ret [12 x i8] c"Hello world!"
   llvm.return %1 : !llvm.array<12 x i8>
+}
+
+llvm.func @complexfpconstant() -> !llvm.struct<(f32, f32)> {
+  %1 = llvm.mlir.constant([-1.000000e+00 : f32, 0.000000e+00 : f32]) : !llvm.struct<(f32, f32)>
+  // CHECK: ret { float, float } { float -1.000000e+00, float 0.000000e+00 }
+  llvm.return %1 : !llvm.struct<(f32, f32)>
+}
+
+llvm.func @complexintconstant() -> !llvm.struct<(i32, i32)> {
+  %1 = llvm.mlir.constant([-1 : i32, 0 : i32]) : !llvm.struct<(i32, i32)>
+  // CHECK: ret { i32, i32 } { i32 -1, i32 0 }
+  llvm.return %1 : !llvm.struct<(i32, i32)>
 }
 
 llvm.func @noreach() {
@@ -1265,6 +1328,29 @@ llvm.mlir.global internal constant @taker_of_address() : !llvm.ptr<func<void ()>
 
 // -----
 
+// CHECK: @forward_use_of_address = linkonce global float* @address_declared_after_use
+llvm.mlir.global linkonce @forward_use_of_address() : !llvm.ptr<f32> {
+  %0 = llvm.mlir.addressof @address_declared_after_use : !llvm.ptr<f32>
+  llvm.return %0 : !llvm.ptr<f32>
+}
+
+llvm.mlir.global linkonce @address_declared_after_use() : f32
+
+// -----
+
+// CHECK: @take_self_address = linkonce global { i32, i32* } {{.*}} { i32, i32* }* @take_self_address
+llvm.mlir.global linkonce @take_self_address() : !llvm.struct<(i32, !llvm.ptr<i32>)> {
+  %z32 = llvm.mlir.constant(0 : i32) : i32
+  %0 = llvm.mlir.undef : !llvm.struct<(i32, !llvm.ptr<i32>)>
+  %1 = llvm.mlir.addressof @take_self_address : !llvm.ptr<!llvm.struct<(i32, !llvm.ptr<i32>)>>
+  %2 = llvm.getelementptr %1[%z32, %z32] : (!llvm.ptr<!llvm.struct<(i32, !llvm.ptr<i32>)>>, i32, i32) -> !llvm.ptr<i32>
+  %3 = llvm.insertvalue %z32, %0[0 : i32] : !llvm.struct<(i32, !llvm.ptr<i32>)>
+  %4 = llvm.insertvalue %2, %3[1 : i32] : !llvm.struct<(i32, !llvm.ptr<i32>)>
+  llvm.return %4 : !llvm.struct<(i32, !llvm.ptr<i32>)>
+}
+
+// -----
+
 // Check that branch weight attributes are exported properly as metadata.
 llvm.func @cond_br_weights(%cond : i1, %arg0 : i32,  %arg1 : i32) -> i32 {
   // CHECK: !prof ![[NODE:[0-9]+]]
@@ -1480,13 +1566,13 @@ module {
     ^bb3(%1: i32):
       %2 = llvm.icmp "slt" %1, %arg1 : i32
       // CHECK: br i1 {{.*}} !llvm.loop ![[LOOP_NODE:[0-9]+]]
-      llvm.cond_br %2, ^bb4, ^bb5 {llvm.loop = {parallel_access = [@metadata::@group1, @metadata::@group2], options = #llvm.loopopts<disable_licm = true, disable_unroll = true, interleave_count = 1>}}
+      llvm.cond_br %2, ^bb4, ^bb5 {llvm.loop = {parallel_access = [@metadata::@group1, @metadata::@group2], options = #llvm.loopopts<disable_licm = true, disable_unroll = true, interleave_count = 1, disable_pipeline = true, pipeline_initiation_interval = 2>}}
     ^bb4:
       %3 = llvm.add %1, %arg2  : i32
       // CHECK: = load i32, i32* %{{.*}} !llvm.access.group ![[ACCESS_GROUPS_NODE:[0-9]+]]
       %5 = llvm.load %4 { access_groups = [@metadata::@group1, @metadata::@group2] } : !llvm.ptr<i32>
       // CHECK: br label {{.*}} !llvm.loop ![[LOOP_NODE]]
-      llvm.br ^bb3(%3 : i32) {llvm.loop = {parallel_access = [@metadata::@group1, @metadata::@group2], options = #llvm.loopopts<disable_unroll = true, disable_licm = true, interleave_count = 1>}}
+      llvm.br ^bb3(%3 : i32) {llvm.loop = {parallel_access = [@metadata::@group1, @metadata::@group2], options = #llvm.loopopts<disable_unroll = true, disable_licm = true, interleave_count = 1, disable_pipeline = true, pipeline_initiation_interval = 2>}}
     ^bb5:
       llvm.return
   }
@@ -1498,11 +1584,49 @@ module {
   }
 }
 
-// CHECK: ![[LOOP_NODE]] = distinct !{![[LOOP_NODE]], ![[PA_NODE:[0-9]+]], ![[UNROLL_DISABLE_NODE:[0-9]+]], ![[LICM_DISABLE_NODE:[0-9]+]], ![[INTERLEAVE_NODE:[0-9]+]]}
+// CHECK: ![[LOOP_NODE]] = distinct !{![[LOOP_NODE]], ![[PA_NODE:[0-9]+]], ![[UNROLL_DISABLE_NODE:[0-9]+]], ![[LICM_DISABLE_NODE:[0-9]+]], ![[INTERLEAVE_NODE:[0-9]+]], ![[PIPELINE_DISABLE_NODE:[0-9]+]], ![[II_NODE:[0-9]+]]}
 // CHECK: ![[PA_NODE]] = !{!"llvm.loop.parallel_accesses", ![[GROUP_NODE1:[0-9]+]], ![[GROUP_NODE2:[0-9]+]]}
 // CHECK: ![[GROUP_NODE1]] = distinct !{}
 // CHECK: ![[GROUP_NODE2]] = distinct !{}
 // CHECK: ![[UNROLL_DISABLE_NODE]] = !{!"llvm.loop.unroll.disable", i1 true}
 // CHECK: ![[LICM_DISABLE_NODE]] = !{!"llvm.licm.disable", i1 true}
 // CHECK: ![[INTERLEAVE_NODE]] = !{!"llvm.loop.interleave.count", i32 1}
+// CHECK: ![[PIPELINE_DISABLE_NODE]] = !{!"llvm.loop.pipeline.disable", i1 true}
+// CHECK: ![[II_NODE]] = !{!"llvm.loop.pipeline.initiationinterval", i32 2}
 // CHECK: ![[ACCESS_GROUPS_NODE]] = !{![[GROUP_NODE1]], ![[GROUP_NODE2]]}
+
+// -----
+
+module {
+  llvm.func @aliasScope(%arg1 : !llvm.ptr<i32>, %arg2 : !llvm.ptr<i32>, %arg3 : !llvm.ptr<i32>) {
+      %0 = llvm.mlir.constant(0 : i32) : i32
+      llvm.store %0, %arg1 { alias_scopes = [@metadata::@scope1], noalias_scopes = [@metadata::@scope2, @metadata::@scope3] } : !llvm.ptr<i32>
+      llvm.store %0, %arg2 { alias_scopes = [@metadata::@scope2], noalias_scopes = [@metadata::@scope1, @metadata::@scope3] } : !llvm.ptr<i32>
+      %1 = llvm.load %arg3 { alias_scopes = [@metadata::@scope3], noalias_scopes = [@metadata::@scope1, @metadata::@scope2] } : !llvm.ptr<i32>
+      llvm.return
+  }
+
+  llvm.metadata @metadata {
+    llvm.alias_scope_domain @domain { description = "The domain"}
+    llvm.alias_scope @scope1 { domain = @domain, description = "The first scope" }
+    llvm.alias_scope @scope2 { domain = @domain }
+    llvm.alias_scope @scope3 { domain = @domain }
+    llvm.return
+  }
+}
+
+// Function
+// CHECK-LABEL: aliasScope
+// CHECK:  store {{.*}}, !alias.scope ![[SCOPE1:[0-9]+]], !noalias ![[SCOPES23:[0-9]+]]
+// CHECK:  store {{.*}}, !alias.scope ![[SCOPE2:[0-9]+]], !noalias ![[SCOPES13:[0-9]+]]
+// CHECK:  load {{.*}},  !alias.scope ![[SCOPE3:[0-9]+]], !noalias ![[SCOPES12:[0-9]+]]
+
+// Metadata
+// CHECK-DAG: ![[DOMAIN:[0-9]+]] = distinct !{![[DOMAIN]], !"The domain"}
+// CHECK-DAG: ![[SCOPE1]] = distinct !{![[SCOPE1]], ![[DOMAIN]], !"The first scope"}
+// CHECK-DAG: ![[SCOPE2]] = distinct !{![[SCOPE2]], ![[DOMAIN]]}
+// CHECK-DAG: ![[SCOPE3]] = distinct !{![[SCOPE3]], ![[DOMAIN]]}
+// CHECK-DAG: ![[SCOPES12]] = !{![[SCOPE1]], ![[SCOPE2]]}
+// CHECK-DAG: ![[SCOPES13]] = !{![[SCOPE1]], ![[SCOPE3]]}
+// CHECK-DAG: ![[SCOPES23]] = !{![[SCOPE2]], ![[SCOPE3]]}
+

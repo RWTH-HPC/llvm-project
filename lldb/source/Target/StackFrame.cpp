@@ -1166,31 +1166,6 @@ StackFrame::GetValueObjectForFrameVariable(const VariableSP &variable_sp,
   return valobj_sp;
 }
 
-ValueObjectSP StackFrame::TrackGlobalVariable(const VariableSP &variable_sp,
-                                              DynamicValueType use_dynamic) {
-  std::lock_guard<std::recursive_mutex> guard(m_mutex);
-  if (IsHistorical())
-    return ValueObjectSP();
-
-  // Check to make sure we aren't already tracking this variable?
-  ValueObjectSP valobj_sp(
-      GetValueObjectForFrameVariable(variable_sp, use_dynamic));
-  if (!valobj_sp) {
-    // We aren't already tracking this global
-    VariableList *var_list = GetVariableList(true);
-    // If this frame has no variables, create a new list
-    if (var_list == nullptr)
-      m_variable_list_sp = std::make_shared<VariableList>();
-
-    // Add the global/static variable to this frame
-    m_variable_list_sp->AddVariable(variable_sp);
-
-    // Now make a value object for it so we can track its changes
-    valobj_sp = GetValueObjectForFrameVariable(variable_sp, use_dynamic);
-  }
-  return valobj_sp;
-}
-
 bool StackFrame::IsInlined() {
   if (m_sc.block == nullptr)
     GetSymbolContext(eSymbolContextBlock);
@@ -1319,11 +1294,11 @@ lldb::ValueObjectSP StackFrame::GuessValueForAddress(lldb::addr_t addr) {
 
   const char *plugin_name = nullptr;
   const char *flavor = nullptr;
-  const bool prefer_file_cache = false;
+  const bool force_live_memory = true;
 
   DisassemblerSP disassembler_sp =
       Disassembler::DisassembleRange(target_arch, plugin_name, flavor,
-                                     *target_sp, pc_range, prefer_file_cache);
+                                     *target_sp, pc_range, force_live_memory);
 
   if (!disassembler_sp || !disassembler_sp->GetInstructionList().GetSize()) {
     return ValueObjectSP();
@@ -1699,10 +1674,10 @@ lldb::ValueObjectSP StackFrame::GuessValueForRegisterAndOffset(ConstString reg,
 
   const char *plugin_name = nullptr;
   const char *flavor = nullptr;
-  const bool prefer_file_cache = false;
+  const bool force_live_memory = true;
   DisassemblerSP disassembler_sp =
       Disassembler::DisassembleRange(target_arch, plugin_name, flavor,
-                                     *target_sp, pc_range, prefer_file_cache);
+                                     *target_sp, pc_range, force_live_memory);
 
   if (!disassembler_sp || !disassembler_sp->GetInstructionList().GetSize()) {
     return ValueObjectSP();

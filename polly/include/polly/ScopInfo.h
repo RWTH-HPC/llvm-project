@@ -1788,7 +1788,7 @@ private:
   DenseMap<BasicBlock *, isl::set> DomainMap;
 
   /// Constraints on parameters.
-  isl::set Context = nullptr;
+  isl::set Context;
 
   /// The affinator used to translate SCEVs to isl expressions.
   SCEVAffinator Affinator;
@@ -1883,7 +1883,10 @@ private:
   /// set of statement instances that will be scheduled in a subtree. There
   /// are also several other nodes. A full description of the different nodes
   /// in a schedule tree is given in the isl manual.
-  isl::schedule Schedule = nullptr;
+  isl::schedule Schedule;
+
+  /// Is this Scop marked as not to be transformed by an optimization heuristic?
+  bool HasDisableHeuristicsHint = false;
 
   /// Whether the schedule has been modified after derived from the CFG by
   /// ScopBuilder.
@@ -2035,7 +2038,6 @@ public:
   ///
   /// A new statement will be created and added to the statement vector.
   ///
-  /// @param Stmt       The parent statement.
   /// @param SourceRel  The source location.
   /// @param TargetRel  The target location.
   /// @param Domain     The original domain under which the copy statement would
@@ -2251,7 +2253,7 @@ public:
   /// Return the define behavior context, or if not available, its approximation
   /// from all other contexts.
   isl::set getBestKnownDefinedBehaviorContext() const {
-    if (DefinedBehaviorContext)
+    if (!DefinedBehaviorContext.is_null())
       return DefinedBehaviorContext;
 
     return Context.intersect_params(AssumedContext).subtract(InvalidContext);
@@ -2744,6 +2746,13 @@ public:
   /// various places. If statistics are disabled, only zeros are returned to
   /// avoid the overhead.
   ScopStatistics getStatistics() const;
+
+  /// Is this Scop marked as not to be transformed by an optimization heuristic?
+  /// In this case, only user-directed transformations are allowed.
+  bool hasDisableHeuristicsHint() const { return HasDisableHeuristicsHint; }
+
+  /// Mark this Scop to not apply an optimization heuristic.
+  void markDisableHeuristics() { HasDisableHeuristicsHint = true; }
 };
 
 /// Print Scop scop to raw_ostream OS.

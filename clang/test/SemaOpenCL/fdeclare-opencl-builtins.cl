@@ -6,6 +6,7 @@
 // RUN: %clang_cc1 %s -triple spir -verify -pedantic -Wconversion -Werror -fsyntax-only -cl-std=CL2.0 -fdeclare-opencl-builtins -finclude-default-header
 // RUN: %clang_cc1 %s -triple spir -verify -pedantic -Wconversion -Werror -fsyntax-only -cl-std=CLC++ -fdeclare-opencl-builtins -DNO_HEADER
 // RUN: %clang_cc1 %s -triple spir -verify -pedantic -Wconversion -Werror -fsyntax-only -cl-std=CLC++ -fdeclare-opencl-builtins -finclude-default-header
+// RUN: %clang_cc1 %s -triple spir -verify -pedantic -Wconversion -Werror -fsyntax-only -cl-std=CL2.0 -fdeclare-opencl-builtins -finclude-default-header -cl-ext=-cl_khr_fp64 -DNO_FP64
 
 // Test the -fdeclare-opencl-builtins option.  This is not a completeness
 // test, so it should not test for all builtins defined by OpenCL.  Instead
@@ -39,6 +40,9 @@ typedef unsigned int uint;
 typedef unsigned long ulong;
 typedef unsigned short ushort;
 typedef __SIZE_TYPE__ size_t;
+typedef __PTRDIFF_TYPE__ ptrdiff_t;
+typedef __INTPTR_TYPE__ intptr_t;
+typedef __UINTPTR_TYPE__ uintptr_t;
 typedef char char2 __attribute__((ext_vector_type(2)));
 typedef char char4 __attribute__((ext_vector_type(4)));
 typedef uchar uchar4 __attribute__((ext_vector_type(4)));
@@ -98,18 +102,51 @@ void test_typedef_args(clk_event_t evt, volatile atomic_flag *flg, global unsign
   size_t ws[2] = {2, 8};
   ndrange_t r = ndrange_2D(ws);
 }
+
+// Check that atomic_fetch_ functions can be called with (u)intptr_t arguments,
+// despite OpenCLBuiltins.td not providing explicit overloads for those types.
+void test_atomic_fetch(volatile __generic atomic_int *a_int,
+                       volatile __generic atomic_intptr_t *a_intptr,
+                       volatile __generic atomic_uintptr_t *a_uintptr) {
+  int i;
+  intptr_t ip;
+  uintptr_t uip;
+  ptrdiff_t ptrdiff;
+
+  i = atomic_fetch_add(a_int, i);
+  ip = atomic_fetch_add(a_intptr, ptrdiff);
+  uip = atomic_fetch_add(a_uintptr, ptrdiff);
+
+  ip = atomic_fetch_or(a_intptr, ip);
+  uip = atomic_fetch_or(a_uintptr, uip);
+}
+#endif
+
+// Test old atomic overloaded with generic address space in C++ for OpenCL.
+#if __OPENCL_C_VERSION__ >= 200
+void test_legacy_atomics_cpp(__generic volatile unsigned int *a) {
+  atomic_add(a, 1);
+#if !defined(__cplusplus)
+  // expected-error@-2{{no matching function for call to 'atomic_add'}}
+  // expected-note@-3 4 {{candidate function not viable}}
+#endif
+}
 #endif
 
 kernel void basic_conversion() {
-  double d;
   float f;
   char2 c2;
   long2 l2;
   float4 f4;
   int4 i4;
 
+#ifdef NO_FP64
+  (void)convert_double_rtp(f);
+  // expected-error@-1{{implicit declaration of function 'convert_double_rtp' is invalid in OpenCL}}
+#else
+  double d;
   f = convert_float(d);
-  d = convert_double_rtp(f);
+#endif
   l2 = convert_long2_rtz(c2);
   i4 = convert_int4_sat(f4);
 }
@@ -250,3 +287,13 @@ kernel void basic_work_item() {
 // expected-error@-2{{implicit declaration of function 'get_enqueued_local_size' is invalid in OpenCL}}
 #endif
 }
+
+#ifdef NO_FP64
+void test_extension_types(char2 c2) {
+  // We should see 6 candidates for float and half types, and none for double types.
+  int i = isnan(c2);
+  // expected-error@-1{{no matching function for call to 'isnan'}}
+  // expected-note@-2 6 {{candidate function not viable: no known conversion from '__private char2' (vector of 2 'char' values) to 'float}}
+  // expected-note@-3 6 {{candidate function not viable: no known conversion from '__private char2' (vector of 2 'char' values) to 'half}}
+}
+#endif

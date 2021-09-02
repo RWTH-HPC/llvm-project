@@ -328,13 +328,20 @@ PreservedAnalyses ModuleSanitizerCoveragePass::run(Module &M,
 std::pair<Value *, Value *>
 ModuleSanitizerCoverage::CreateSecStartEnd(Module &M, const char *Section,
                                            Type *Ty) {
-  GlobalVariable *SecStart = new GlobalVariable(
-      M, Ty->getPointerElementType(), false, GlobalVariable::ExternalLinkage,
-      nullptr, getSectionStart(Section));
+  // Use ExternalWeak so that if all sections are discarded due to section
+  // garbage collection, the linker will not report undefined symbol errors.
+  // Windows defines the start/stop symbols in compiler-rt so no need for
+  // ExternalWeak.
+  GlobalValue::LinkageTypes Linkage = TargetTriple.isOSBinFormatCOFF()
+                                          ? GlobalVariable::ExternalLinkage
+                                          : GlobalVariable::ExternalWeakLinkage;
+  GlobalVariable *SecStart =
+      new GlobalVariable(M, Ty, false, Linkage, nullptr,
+                         getSectionStart(Section));
   SecStart->setVisibility(GlobalValue::HiddenVisibility);
-  GlobalVariable *SecEnd = new GlobalVariable(
-      M, Ty->getPointerElementType(), false, GlobalVariable::ExternalLinkage,
-      nullptr, getSectionEnd(Section));
+  GlobalVariable *SecEnd =
+      new GlobalVariable(M, Ty, false, Linkage, nullptr,
+                         getSectionEnd(Section));
   SecEnd->setVisibility(GlobalValue::HiddenVisibility);
   IRBuilder<> IRB(M.getContext());
   if (!TargetTriple.isOSBinFormatCOFF())
@@ -345,7 +352,8 @@ ModuleSanitizerCoverage::CreateSecStartEnd(Module &M, const char *Section,
   auto SecStartI8Ptr = IRB.CreatePointerCast(SecStart, Int8PtrTy);
   auto GEP = IRB.CreateGEP(Int8Ty, SecStartI8Ptr,
                            ConstantInt::get(IntptrTy, sizeof(uint64_t)));
-  return std::make_pair(IRB.CreatePointerCast(GEP, Ty), SecEnd);
+  return std::make_pair(IRB.CreatePointerCast(GEP, PointerType::getUnqual(Ty)),
+                        SecEnd);
 }
 
 Function *ModuleSanitizerCoverage::CreateInitCallsForSections(
@@ -355,8 +363,9 @@ Function *ModuleSanitizerCoverage::CreateInitCallsForSections(
   auto SecStart = SecStartEnd.first;
   auto SecEnd = SecStartEnd.second;
   Function *CtorFunc;
+  Type *PtrTy = PointerType::getUnqual(Ty);
   std::tie(CtorFunc, std::ignore) = createSanitizerCtorAndInitFunctions(
-      M, CtorName, InitFunctionName, {Ty, Ty}, {SecStart, SecEnd});
+      M, CtorName, InitFunctionName, {PtrTy, PtrTy}, {SecStart, SecEnd});
   assert(CtorFunc->getName() == CtorName);
 
   if (TargetTriple.supportsCOMDAT()) {
@@ -375,7 +384,6 @@ Function *ModuleSanitizerCoverage::CreateInitCallsForSections(
     // to include the sancov constructor. This way the linker can deduplicate
     // the constructors but always leave one copy.
     CtorFunc->setLinkage(GlobalValue::WeakODRLinkage);
-    appendToUsed(M, CtorFunc);
   }
   return CtorFunc;
 }
@@ -460,7 +468,7 @@ bool ModuleSanitizerCoverage::instrumentModule(
   Constant *SanCovLowestStackConstant =
       M.getOrInsertGlobal(SanCovLowestStackName, IntptrTy);
   SanCovLowestStack = dyn_cast<GlobalVariable>(SanCovLowestStackConstant);
-  if (!SanCovLowestStack) {
+  if (!SanCovLowestStack || SanCovLowestStack->getValueType() != IntptrTy) {
     C->emitError(StringRef("'") + SanCovLowestStackName +
                  "' should not be declared by the user");
     return true;
@@ -481,19 +489,19 @@ bool ModuleSanitizerCoverage::instrumentModule(
 
   if (FunctionGuardArray)
     Ctor = CreateInitCallsForSections(M, SanCovModuleCtorTracePcGuardName,
-                                      SanCovTracePCGuardInitName, Int32PtrTy,
+                                      SanCovTracePCGuardInitName, Int32Ty,
                                       SanCovGuardsSectionName);
   if (Function8bitCounterArray)
     Ctor = CreateInitCallsForSections(M, SanCovModuleCtor8bitCountersName,
-                                      SanCov8bitCountersInitName, Int8PtrTy,
+                                      SanCov8bitCountersInitName, Int8Ty,
                                       SanCovCountersSectionName);
   if (FunctionBoolArray) {
     Ctor = CreateInitCallsForSections(M, SanCovModuleCtorBoolFlagName,
-                                      SanCovBoolFlagInitName, Int1PtrTy,
+                                      SanCovBoolFlagInitName, Int1Ty,
                                       SanCovBoolFlagSectionName);
   }
   if (Ctor && Options.PCTable) {
-    auto SecStartEnd = CreateSecStartEnd(M, SanCovPCsSectionName, IntptrPtrTy);
+    auto SecStartEnd = CreateSecStartEnd(M, SanCovPCsSectionName, IntptrTy);
     FunctionCallee InitFunction = declareSanitizerInitFunction(
         M, SanCovPCsInitName, {IntptrPtrTy, IntptrPtrTy});
     IRBuilder<> IRBCtor(Ctor->getEntryBlock().getTerminator());
@@ -613,6 +621,8 @@ void ModuleSanitizerCoverage::instrumentFunction(
   if (Allowlist && !Allowlist->inSection("coverage", "fun", F.getName()))
     return;
   if (Blocklist && Blocklist->inSection("coverage", "fun", F.getName()))
+    return;
+  if (F.hasFnAttribute(Attribute::NoSanitizeCoverage))
     return;
   if (Options.CoverageType >= SanitizerCoverageOptions::SCK_Edge)
     SplitAllCriticalEdges(F, CriticalEdgeSplittingOptions().setIgnoreUnreachableDests());
@@ -897,6 +907,9 @@ void ModuleSanitizerCoverage::InjectCoverageAtBlock(Function &F, BasicBlock &BB,
     IP = PrepareToSplitEntryBlock(BB, IP);
   } else {
     EntryLoc = IP->getDebugLoc();
+    if (!EntryLoc)
+      if (auto *SP = F.getSubprogram())
+        EntryLoc = DILocation::get(SP->getContext(), 0, 0, SP);
   }
 
   IRBuilder<> IRB(&*IP);

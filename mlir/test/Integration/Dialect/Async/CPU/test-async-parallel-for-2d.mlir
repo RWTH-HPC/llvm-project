@@ -1,8 +1,39 @@
 // RUN:   mlir-opt %s -async-parallel-for                                      \
 // RUN:               -async-to-async-runtime                                  \
-// RUN:               -async-ref-counting                                      \
+// RUN:               -async-runtime-ref-counting                              \
+// RUN:               -async-runtime-ref-counting-opt                          \
 // RUN:               -convert-async-to-llvm                                   \
 // RUN:               -convert-scf-to-std                                      \
+// RUN:               -convert-memref-to-llvm                                  \
+// RUN:               -convert-std-to-llvm                                     \
+// RUN: | mlir-cpu-runner                                                      \
+// RUN:  -e entry -entry-point-result=void -O0                                 \
+// RUN:  -shared-libs=%mlir_integration_test_dir/libmlir_runner_utils%shlibext \
+// RUN:  -shared-libs=%mlir_integration_test_dir/libmlir_async_runtime%shlibext\
+// RUN: | FileCheck %s --dump-input=always
+
+// RUN:   mlir-opt %s -async-parallel-for                                      \
+// RUN:               -async-to-async-runtime                                  \
+// RUN:               -async-runtime-policy-based-ref-counting                 \
+// RUN:               -convert-async-to-llvm                                   \
+// RUN:               -convert-scf-to-std                                      \
+// RUN:               -convert-memref-to-llvm                                  \
+// RUN:               -convert-std-to-llvm                                     \
+// RUN: | mlir-cpu-runner                                                      \
+// RUN:  -e entry -entry-point-result=void -O0                                 \
+// RUN:  -shared-libs=%mlir_integration_test_dir/libmlir_runner_utils%shlibext \
+// RUN:  -shared-libs=%mlir_integration_test_dir/libmlir_async_runtime%shlibext\
+// RUN: | FileCheck %s --dump-input=always
+
+// RUN:   mlir-opt %s -async-parallel-for="async-dispatch=false                \
+// RUN:                                    num-workers=20                      \
+// RUN:                                    target-block-size=1"                \
+// RUN:               -async-to-async-runtime                                  \
+// RUN:               -async-runtime-ref-counting                              \
+// RUN:               -async-runtime-ref-counting-opt                          \
+// RUN:               -convert-async-to-llvm                                   \
+// RUN:               -convert-scf-to-std                                      \
+// RUN:               -convert-memref-to-llvm                                  \
 // RUN:               -convert-std-to-llvm                                     \
 // RUN: | mlir-cpu-runner                                                      \
 // RUN:  -e entry -entry-point-result=void -O0                                 \
@@ -19,8 +50,8 @@ func @entry() {
   %lb = constant 0 : index
   %ub = constant 8 : index
 
-  %A = alloc() : memref<8x8xf32>
-  %U = memref_cast %A :  memref<8x8xf32> to memref<*xf32>
+  %A = memref.alloc() : memref<8x8xf32>
+  %U = memref.cast %A :  memref<8x8xf32> to memref<*xf32>
 
   // 1. (%i, %i) = (0, 8) to (8, 8) step (1, 1)
   scf.parallel (%i, %j) = (%lb, %lb) to (%ub, %ub) step (%c1, %c1) {
@@ -28,7 +59,7 @@ func @entry() {
     %1 = addi %j, %0  : index
     %2 = index_cast %1 : index to i32
     %3 = sitofp %2 : i32 to f32
-    store %3, %A[%i, %j] : memref<8x8xf32>
+    memref.store %3, %A[%i, %j] : memref<8x8xf32>
   }
 
   // CHECK:      [0, 1, 2, 3, 4, 5, 6, 7]
@@ -42,7 +73,7 @@ func @entry() {
   call @print_memref_f32(%U): (memref<*xf32>) -> ()
 
   scf.parallel (%i, %j) = (%lb, %lb) to (%ub, %ub) step (%c1, %c1) {
-    store %c0, %A[%i, %j] : memref<8x8xf32>
+    memref.store %c0, %A[%i, %j] : memref<8x8xf32>
   }
 
   // 2. (%i, %i) = (0, 8) to (8, 8) step (2, 1)
@@ -51,7 +82,7 @@ func @entry() {
     %1 = addi %j, %0  : index
     %2 = index_cast %1 : index to i32
     %3 = sitofp %2 : i32 to f32
-    store %3, %A[%i, %j] : memref<8x8xf32>
+    memref.store %3, %A[%i, %j] : memref<8x8xf32>
   }
 
   // CHECK:      [0, 1, 2, 3, 4, 5, 6, 7]
@@ -65,7 +96,7 @@ func @entry() {
   call @print_memref_f32(%U): (memref<*xf32>) -> ()
 
   scf.parallel (%i, %j) = (%lb, %lb) to (%ub, %ub) step (%c1, %c1) {
-    store %c0, %A[%i, %j] : memref<8x8xf32>
+    memref.store %c0, %A[%i, %j] : memref<8x8xf32>
   }
 
   // 3. (%i, %i) = (0, 8) to (8, 8) step (1, 2)
@@ -74,7 +105,7 @@ func @entry() {
     %1 = addi %j, %0  : index
     %2 = index_cast %1 : index to i32
     %3 = sitofp %2 : i32 to f32
-    store %3, %A[%i, %j] : memref<8x8xf32>
+    memref.store %3, %A[%i, %j] : memref<8x8xf32>
   }
 
   // CHECK:      [0, 0, 2, 0, 4, 0, 6, 0]
@@ -87,7 +118,7 @@ func @entry() {
   // CHECK-NEXT: [56, 0, 58, 0, 60, 0, 62, 0]
   call @print_memref_f32(%U): (memref<*xf32>) -> ()
 
-  dealloc %A : memref<8x8xf32>
+  memref.dealloc %A : memref<8x8xf32>
 
   return
 }

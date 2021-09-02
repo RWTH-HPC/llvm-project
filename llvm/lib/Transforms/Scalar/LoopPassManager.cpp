@@ -14,6 +14,7 @@
 #include "llvm/Analysis/MemorySSA.h"
 #include "llvm/Analysis/ScalarEvolutionAliasAnalysis.h"
 #include "llvm/Analysis/TargetLibraryInfo.h"
+#include "llvm/Support/Debug.h"
 #include "llvm/Support/TimeProfiler.h"
 
 using namespace llvm;
@@ -26,10 +27,6 @@ PreservedAnalyses
 PassManager<Loop, LoopAnalysisManager, LoopStandardAnalysisResults &,
             LPMUpdater &>::run(Loop &L, LoopAnalysisManager &AM,
                                LoopStandardAnalysisResults &AR, LPMUpdater &U) {
-
-  if (DebugLogging)
-    dbgs() << "Starting Loop pass manager run.\n";
-
   // Runs loop-nest passes only when the current loop is a top-level one.
   PreservedAnalyses PA = (L.isOutermost() && !LoopNestPasses.empty())
                              ? runWithLoopNestPasses(L, AM, AR, U)
@@ -43,9 +40,6 @@ PassManager<Loop, LoopAnalysisManager, LoopStandardAnalysisResults &,
   // FIXME: This isn't correct! This loop and all nested loops' analyses should
   // be preserved, but unrolling should invalidate the parent loop's analyses.
   PA.preserveSet<AllAnalysesOn<Loop>>();
-
-  if (DebugLogging)
-    dbgs() << "Finished Loop pass manager run.\n";
 
   return PA;
 }
@@ -291,8 +285,21 @@ PreservedAnalyses FunctionToLoopPassAdaptor::run(Function &F,
     else
       PI.runAfterPass<Loop>(*Pass, *L, PassPA);
 
-    // FIXME: We should verify the set of analyses relevant to Loop passes
-    // are preserved.
+    if (LAR.MSSA && !PassPA.getChecker<MemorySSAAnalysis>().preserved())
+      report_fatal_error("Loop pass manager using MemorySSA contains a pass "
+                         "that does not preserve MemorySSA");
+
+#ifndef NDEBUG
+    // LoopAnalysisResults should always be valid.
+    // Note that we don't LAR.SE.verify() because that can change observed SE
+    // queries. See PR44815.
+    if (VerifyDomInfo)
+      LAR.DT.verify();
+    if (VerifyLoopInfo)
+      LAR.LI.verify(LAR.DT);
+    if (LAR.MSSA && VerifyMemorySSA)
+      LAR.MSSA->verifyMemorySSA();
+#endif
 
     // If the loop hasn't been deleted, we need to handle invalidation here.
     if (!Updater.skipCurrentLoop())
@@ -324,12 +331,6 @@ PreservedAnalyses FunctionToLoopPassAdaptor::run(Function &F,
     PA.preserve<BlockFrequencyAnalysis>();
   if (UseMemorySSA)
     PA.preserve<MemorySSAAnalysis>();
-  // FIXME: What we really want to do here is preserve an AA category, but
-  // that concept doesn't exist yet.
-  PA.preserve<AAManager>();
-  PA.preserve<BasicAA>();
-  PA.preserve<GlobalsAA>();
-  PA.preserve<SCEVAA>();
   return PA;
 }
 

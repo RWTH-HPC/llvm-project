@@ -261,8 +261,7 @@ void netbsd::Linker::ConstructJob(Compilation &C, const JobAction &JA,
   const SanitizerArgs &SanArgs = ToolChain.getSanitizerArgs();
   if (SanArgs.needsSharedRt()) {
     CmdArgs.push_back("-rpath");
-    CmdArgs.push_back(Args.MakeArgString(
-        ToolChain.getCompilerRTPath().c_str()));
+    CmdArgs.push_back(Args.MakeArgString(ToolChain.getCompilerRTPath()));
   }
 
   unsigned Major, Minor, Micro;
@@ -452,8 +451,8 @@ void NetBSD::addLibCxxIncludePaths(const llvm::opt::ArgList &DriverArgs,
 
 void NetBSD::addLibStdCxxIncludePaths(const llvm::opt::ArgList &DriverArgs,
                                       llvm::opt::ArgStringList &CC1Args) const {
-  addLibStdCXXIncludePaths(getDriver().SysRoot, "/usr/include/g++", "", "", "",
-                           "", DriverArgs, CC1Args);
+  addLibStdCXXIncludePaths(getDriver().SysRoot + "/usr/include/g++", "", "",
+                           DriverArgs, CC1Args);
 }
 
 llvm::ExceptionHandling NetBSD::GetExceptionModel(const ArgList &Args) const {

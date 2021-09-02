@@ -21,13 +21,6 @@
 #include "SIInstrInfo.h"
 #include "llvm/CodeGen/SelectionDAGTargetInfo.h"
 
-namespace llvm {
-
-class MCInst;
-class MCInstrInfo;
-
-} // namespace llvm
-
 #define GET_SUBTARGETINFO_HEADER
 #include "AMDGPUGenSubtargetInfo.inc"
 
@@ -41,24 +34,16 @@ class GCNSubtarget final : public AMDGPUGenSubtargetInfo,
   using AMDGPUSubtarget::getMaxWavesPerEU;
 
 public:
-  enum TrapHandlerAbi {
-    TrapHandlerAbiNone = 0,
-    TrapHandlerAbiHsa = 1
+  // Following 2 enums are documented at:
+  //   - https://llvm.org/docs/AMDGPUUsage.html#trap-handler-abi
+  enum class TrapHandlerAbi {
+    NONE   = 0x00,
+    AMDHSA = 0x01,
   };
 
-  enum TrapID {
-    TrapIDHardwareReserved = 0,
-    TrapIDHSADebugTrap = 1,
-    TrapIDLLVMTrap = 2,
-    TrapIDLLVMDebugTrap = 3,
-    TrapIDDebugBreakpoint = 7,
-    TrapIDDebugReserved8 = 8,
-    TrapIDDebugReservedFE = 0xfe,
-    TrapIDDebugReservedFF = 0xff
-  };
-
-  enum TrapRegValues {
-    LLVMTrapHandlerRegValue = 1
+  enum class TrapID {
+    LLVMAMDHSATrap      = 0x02,
+    LLVMAMDHSADebugTrap = 0x03,
   };
 
 private:
@@ -121,6 +106,8 @@ protected:
   bool GFX10_3Insts;
   bool GFX7GFX8GFX9Insts;
   bool SGPRInitBug;
+  bool NegativeScratchOffsetBug;
+  bool NegativeUnalignedScratchOffsetBug;
   bool HasSMemRealTime;
   bool HasIntClamp;
   bool HasFmaMixInsts;
@@ -142,6 +129,8 @@ protected:
   bool HasGFX10A16;
   bool HasG16;
   bool HasNSAEncoding;
+  unsigned NSAMaxSize;
+  bool GFX10_AEncoding;
   bool GFX10_BEncoding;
   bool HasDLInsts;
   bool HasDot1Insts;
@@ -150,6 +139,7 @@ protected:
   bool HasDot4Insts;
   bool HasDot5Insts;
   bool HasDot6Insts;
+  bool HasDot7Insts;
   bool HasMAIInsts;
   bool HasPkFmacF16Inst;
   bool HasAtomicFaddInsts;
@@ -172,6 +162,7 @@ protected:
   bool FlatGlobalInsts;
   bool FlatScratchInsts;
   bool ScalarFlatScratchInsts;
+  bool HasArchitectedFlatScratch;
   bool AddNoCarryInsts;
   bool HasUnpackedD16VMem;
   bool R600ALUInst;
@@ -193,6 +184,7 @@ protected:
   bool HasVcmpxExecWARHazard;
   bool HasLdsBranchVmemWARHazard;
   bool HasNSAtoVMEMBug;
+  bool HasNSAClauseBug;
   bool HasOffset3fBug;
   bool HasFlatSegmentOffsetBug;
   bool HasImageStoreD16Bug;
@@ -254,6 +246,10 @@ public:
     return RegBankInfo.get();
   }
 
+  const AMDGPU::IsaInfo::AMDGPUTargetID &getTargetID() const {
+    return TargetID;
+  }
+
   // Nothing implemented, just prevent crashes on use.
   const SelectionDAGTargetInfo *getSelectionDAGInfo() const override {
     return &TSInfo;
@@ -283,6 +279,11 @@ public:
   }
 
   unsigned getConstantBusLimit(unsigned Opcode) const;
+
+  /// Returns if the result of this instruction with a 16-bit result returned in
+  /// a 32-bit register implicitly zeroes the high 16-bits, rather than preserve
+  /// the original value.
+  bool zeroesHigh16BitsOfDest(unsigned Opcode) const;
 
   bool hasIntClamp() const {
     return HasIntClamp;
@@ -387,7 +388,12 @@ public:
   }
 
   TrapHandlerAbi getTrapHandlerAbi() const {
-    return isAmdHsaOS() ? TrapHandlerAbiHsa : TrapHandlerAbiNone;
+    return isAmdHsaOS() ? TrapHandlerAbi::AMDHSA : TrapHandlerAbi::NONE;
+  }
+
+  bool supportsGetDoorbellID() const {
+    // The S_GETREG DOORBELL_ID is supported by all GFX9 onward targets.
+    return getGeneration() >= GFX9;
   }
 
   /// True if the offset field of DS instructions works as expected. On SI, the
@@ -687,6 +693,10 @@ public:
     return HasDot6Insts;
   }
 
+  bool hasDot7Insts() const {
+    return HasDot7Insts;
+  }
+
   bool hasMAIInsts() const {
     return HasMAIInsts;
   }
@@ -801,9 +811,10 @@ public:
     return HasScalarAtomics;
   }
 
-  bool hasLDSFPAtomics() const {
-    return GFX8Insts;
-  }
+  bool hasLDSFPAtomicAdd() const { return GFX8Insts; }
+
+  /// \returns true if the subtarget has the v_permlanex16_b32 instruction.
+  bool hasPermLaneX16() const { return getGeneration() >= GFX10; }
 
   bool hasDPP() const {
     return HasDPP;
@@ -827,6 +838,10 @@ public:
 
   bool hasPackedFP32Ops() const {
     return HasPackedFP32Ops;
+  }
+
+  bool hasFmaakFmamkF32Insts() const {
+    return getGeneration() >= GFX10;
   }
 
   bool hasExtendedImageInsts() const {
@@ -855,6 +870,12 @@ public:
 
   bool hasNSAEncoding() const { return HasNSAEncoding; }
 
+  unsigned getNSAMaxSize() const { return NSAMaxSize; }
+
+  bool hasGFX10_AEncoding() const {
+    return GFX10_AEncoding;
+  }
+
   bool hasGFX10_BEncoding() const {
     return GFX10_BEncoding;
   }
@@ -875,6 +896,12 @@ public:
 
   bool hasSGPRInitBug() const {
     return SGPRInitBug;
+  }
+
+  bool hasNegativeScratchOffsetBug() const { return NegativeScratchOffsetBug; }
+
+  bool hasNegativeUnalignedScratchOffsetBug() const {
+    return NegativeUnalignedScratchOffsetBug;
   }
 
   bool hasMFMAInlineLiteralBug() const {
@@ -931,6 +958,8 @@ public:
     return HasNSAtoVMEMBug;
   }
 
+  bool hasNSAClauseBug() const { return HasNSAClauseBug; }
+
   bool hasHardClauses() const { return getGeneration() >= GFX10; }
 
   bool hasGFX90AInsts() const { return GFX90AInsts; }
@@ -960,6 +989,10 @@ public:
   bool flatScratchIsPointer() const {
     return getGeneration() >= AMDGPUSubtarget::GFX9;
   }
+
+  /// \returns true if the flat_scratch register is initialized by the HW.
+  /// In this case it is readonly.
+  bool flatScratchIsArchitected() const { return HasArchitectedFlatScratch; }
 
   /// \returns true if the machine has merged shaders in which s0-s7 are
   /// reserved by the hardware and user SGPRs start at s8
@@ -999,8 +1032,23 @@ public:
     return AMDGPU::IsaInfo::getMaxNumSGPRs(this, WavesPerEU, Addressable);
   }
 
-  /// \returns Reserved number of SGPRs for given function \p MF.
+  /// \returns Reserved number of SGPRs. This is common
+  /// utility function called by MachineFunction and
+  /// Function variants of getReservedNumSGPRs.
+  unsigned getBaseReservedNumSGPRs(const bool HasFlatScratchInit) const;
+  /// \returns Reserved number of SGPRs for given machine function \p MF.
   unsigned getReservedNumSGPRs(const MachineFunction &MF) const;
+
+  /// \returns Reserved number of SGPRs for given function \p F.
+  unsigned getReservedNumSGPRs(const Function &F) const;
+
+  /// \returns max num SGPRs. This is the common utility
+  /// function called by MachineFunction and Function
+  /// variants of getMaxNumSGPRs.
+  unsigned getBaseMaxNumSGPRs(const Function &F,
+                              std::pair<unsigned, unsigned> WavesPerEU,
+                              unsigned PreloadedSGPRs,
+                              unsigned ReservedNumSGPRs) const;
 
   /// \returns Maximum number of SGPRs that meets number of waves per execution
   /// unit requirement for function \p MF, or number of SGPRs explicitly
@@ -1011,6 +1059,16 @@ public:
   /// subtarget's specifications, or does not meet number of waves per execution
   /// unit requirement.
   unsigned getMaxNumSGPRs(const MachineFunction &MF) const;
+
+  /// \returns Maximum number of SGPRs that meets number of waves per execution
+  /// unit requirement for function \p F, or number of SGPRs explicitly
+  /// requested using "amdgpu-num-sgpr" attribute attached to function \p F.
+  ///
+  /// \returns Value that meets number of waves per execution unit requirement
+  /// if explicitly requested value cannot be converted to integer, violates
+  /// subtarget's specifications, or does not meet number of waves per execution
+  /// unit requirement.
+  unsigned getMaxNumSGPRs(const Function &F) const;
 
   /// \returns VGPR allocation granularity supported by the subtarget.
   unsigned getVGPRAllocGranule() const {
@@ -1043,6 +1101,20 @@ public:
   unsigned getMaxNumVGPRs(unsigned WavesPerEU) const {
     return AMDGPU::IsaInfo::getMaxNumVGPRs(this, WavesPerEU);
   }
+
+  /// \returns max num VGPRs. This is the common utility function
+  /// called by MachineFunction and Function variants of getMaxNumVGPRs.
+  unsigned getBaseMaxNumVGPRs(const Function &F,
+                              std::pair<unsigned, unsigned> WavesPerEU) const;
+  /// \returns Maximum number of VGPRs that meets number of waves per execution
+  /// unit requirement for function \p F, or number of VGPRs explicitly
+  /// requested using "amdgpu-num-vgpr" attribute attached to function \p F.
+  ///
+  /// \returns Value that meets number of waves per execution unit requirement
+  /// if explicitly requested value cannot be converted to integer, violates
+  /// subtarget's specifications, or does not meet number of waves per execution
+  /// unit requirement.
+  unsigned getMaxNumVGPRs(const Function &F) const;
 
   /// \returns Maximum number of VGPRs that meets number of waves per execution
   /// unit requirement for function \p MF, or number of VGPRs explicitly

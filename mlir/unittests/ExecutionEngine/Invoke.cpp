@@ -7,6 +7,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "mlir/Conversion/LinalgToLLVM/LinalgToLLVM.h"
+#include "mlir/Conversion/MemRefToLLVM/MemRefToLLVM.h"
 #include "mlir/Conversion/StandardToLLVM/ConvertStandardToLLVMPass.h"
 #include "mlir/Conversion/VectorToLLVM/ConvertVectorToLLVM.h"
 #include "mlir/Conversion/VectorToSCF/VectorToSCF.h"
@@ -39,6 +40,7 @@ static struct LLVMInitializer {
 /// dialects lowering to LLVM Dialect.
 static LogicalResult lowerToLLVMDialect(ModuleOp module) {
   PassManager pm(module.getContext());
+  pm.addPass(mlir::createMemRefToLLVMPass());
   pm.addPass(mlir::createLowerToLLVMPass());
   return pm.run(module);
 }
@@ -104,7 +106,7 @@ TEST(NativeMemRefJit, ZeroRankMemref) {
   std::string moduleStr = R"mlir(
   func @zero_ranked(%arg0 : memref<f32>) attributes { llvm.emit_c_interface } {
     %cst42 = constant 42.0 : f32
-    store %cst42, %arg0[] : memref<f32>
+    memref.store %cst42, %arg0[] : memref<f32>
     return
   }
   )mlir";
@@ -139,7 +141,7 @@ TEST(NativeMemRefJit, RankOneMemref) {
   func @one_ranked(%arg0 : memref<?xf32>) attributes { llvm.emit_c_interface } {
     %cst42 = constant 42.0 : f32
     %cst5 = constant 5 : index
-    store %cst42, %arg0[%cst5] : memref<?xf32>
+    memref.store %cst42, %arg0[%cst5] : memref<?xf32>
     return
   }
   )mlir";
@@ -192,8 +194,8 @@ TEST(NativeMemRefJit, BasicMemref) {
     %x = constant 2 : index
     %y = constant 1 : index
     %cst42 = constant 42.0 : f32
-    store %cst42, %arg0[%y, %x] : memref<?x?xf32>
-    store %cst42, %arg1[%x, %y] : memref<?x?xf32>
+    memref.store %cst42, %arg0[%y, %x] : memref<?x?xf32>
+    memref.store %cst42, %arg1[%x, %y] : memref<?x?xf32>
     return
   }
   )mlir";
@@ -234,7 +236,7 @@ TEST(NativeMemRefJit, JITCallback) {
   std::string moduleStr = R"mlir(
   func private @callback(%arg0: memref<?x?xf32>, %coefficient: i32)  attributes { llvm.emit_c_interface }
   func @caller_for_callback(%arg0: memref<?x?xf32>, %coefficient: i32) attributes { llvm.emit_c_interface } {
-    %unranked = memref_cast %arg0: memref<?x?xf32> to memref<*xf32>
+    %unranked = memref.cast %arg0: memref<?x?xf32> to memref<*xf32>
     call @callback(%arg0, %coefficient) : (memref<?x?xf32>, i32) -> ()
     return
   }

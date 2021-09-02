@@ -23,7 +23,7 @@
 #include "mlir/IR/RegionGraphTraits.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Target/LLVMIR/LLVMTranslationInterface.h"
-#include "mlir/Target/LLVMIR/TypeTranslation.h"
+#include "mlir/Target/LLVMIR/TypeToLLVM.h"
 #include "llvm/ADT/TypeSwitch.h"
 
 #include "llvm/ADT/PostOrderIterator.h"
@@ -35,6 +35,7 @@
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/InlineAsm.h"
+#include "llvm/IR/IntrinsicsNVPTX.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/MDBuilder.h"
 #include "llvm/IR/Module.h"
@@ -102,16 +103,30 @@ static llvm::Type *getInnermostElementType(llvm::Type *type) {
 
 /// Create an LLVM IR constant of `llvmType` from the MLIR attribute `attr`.
 /// This currently supports integer, floating point, splat and dense element
-/// attributes and combinations thereof.  In case of error, report it to `loc`
-/// and return nullptr.
+/// attributes and combinations thereof. Also, an array attribute with two
+/// elements is supported to represent a complex constant.  In case of error,
+/// report it to `loc` and return nullptr.
 llvm::Constant *mlir::LLVM::detail::getLLVMConstant(
     llvm::Type *llvmType, Attribute attr, Location loc,
-    const ModuleTranslation &moduleTranslation) {
+    const ModuleTranslation &moduleTranslation, bool isTopLevel) {
   if (!attr)
     return llvm::UndefValue::get(llvmType);
-  if (llvmType->isStructTy()) {
-    emitError(loc, "struct types are not supported in constants");
-    return nullptr;
+  if (auto *structType = dyn_cast<::llvm::StructType>(llvmType)) {
+    if (!isTopLevel) {
+      emitError(loc, "nested struct types are not supported in constants");
+      return nullptr;
+    }
+    auto arrayAttr = attr.cast<ArrayAttr>();
+    llvm::Type *elementType = structType->getElementType(0);
+    llvm::Constant *real = getLLVMConstant(elementType, arrayAttr[0], loc,
+                                           moduleTranslation, false);
+    if (!real)
+      return nullptr;
+    llvm::Constant *imag = getLLVMConstant(elementType, arrayAttr[1], loc,
+                                           moduleTranslation, false);
+    if (!imag)
+      return nullptr;
+    return llvm::ConstantStruct::get(structType, {real, imag});
   }
   // For integer types, we allow a mismatch in sizes as the index type in
   // MLIR might have a different size than the index type in the LLVM module.
@@ -119,8 +134,15 @@ llvm::Constant *mlir::LLVM::detail::getLLVMConstant(
     return llvm::ConstantInt::get(
         llvmType,
         intAttr.getValue().sextOrTrunc(llvmType->getIntegerBitWidth()));
-  if (auto floatAttr = attr.dyn_cast<FloatAttr>())
+  if (auto floatAttr = attr.dyn_cast<FloatAttr>()) {
+    if (llvmType !=
+        llvm::Type::getFloatingPointTy(llvmType->getContext(),
+                                       floatAttr.getValue().getSemantics())) {
+      emitError(loc, "FloatAttr does not match expected type of the constant");
+      return nullptr;
+    }
     return llvm::ConstantFP::get(llvmType, floatAttr.getValue());
+  }
   if (auto funcAttr = attr.dyn_cast<FlatSymbolRefAttr>())
     return llvm::ConstantExpr::getBitCast(
         moduleTranslation.lookupFunction(funcAttr.getValue()), llvmType);
@@ -143,7 +165,7 @@ llvm::Constant *mlir::LLVM::detail::getLLVMConstant(
     llvm::Constant *child = getLLVMConstant(
         elementType,
         elementTypeSequential ? splatAttr : splatAttr.getSplatValue(), loc,
-        moduleTranslation);
+        moduleTranslation, false);
     if (!child)
       return nullptr;
     if (llvmType->isVectorTy())
@@ -158,8 +180,6 @@ llvm::Constant *mlir::LLVM::detail::getLLVMConstant(
 
   if (auto elementsAttr = attr.dyn_cast<ElementsAttr>()) {
     assert(elementsAttr.getType().hasStaticShape());
-    assert(elementsAttr.getNumElements() != 0 &&
-           "unexpected empty elements attribute");
     assert(!elementsAttr.getType().getShape().empty() &&
            "unexpected empty elements attribute shape");
 
@@ -168,7 +188,7 @@ llvm::Constant *mlir::LLVM::detail::getLLVMConstant(
     llvm::Type *innermostType = getInnermostElementType(llvmType);
     for (auto n : elementsAttr.getValues<Attribute>()) {
       constants.push_back(
-          getLLVMConstant(innermostType, n, loc, moduleTranslation));
+          getLLVMConstant(innermostType, n, loc, moduleTranslation, false));
       if (!constants.back())
         return nullptr;
     }
@@ -275,11 +295,11 @@ void mlir::LLVM::detail::connectPHINodes(Region &region,
 }
 
 /// Sort function blocks topologically.
-llvm::SetVector<Block *>
+SetVector<Block *>
 mlir::LLVM::detail::getTopologicallySortedBlocks(Region &region) {
   // For each block that has not been visited yet (i.e. that has no
   // predecessors), add it to the list as well as its successors.
-  llvm::SetVector<Block *> blocks;
+  SetVector<Block *> blocks;
   for (Block &b : region) {
     if (blocks.count(&b) == 0) {
       llvm::ReversePostOrderTraversal<Block *> traversal(&b);
@@ -300,16 +320,46 @@ llvm::Value *mlir::LLVM::detail::createIntrinsicCall(
   return builder.CreateCall(fn, args);
 }
 
+llvm::Value *
+mlir::LLVM::detail::createNvvmIntrinsicCall(llvm::IRBuilderBase &builder,
+                                            llvm::Intrinsic::ID intrinsic,
+                                            ArrayRef<llvm::Value *> args) {
+  llvm::Module *module = builder.GetInsertBlock()->getModule();
+  llvm::Function *fn;
+  if (llvm::Intrinsic::isOverloaded(intrinsic)) {
+    if (intrinsic != llvm::Intrinsic::nvvm_wmma_m16n16k16_mma_row_row_f16_f16 &&
+        intrinsic != llvm::Intrinsic::nvvm_wmma_m16n16k16_mma_row_row_f32_f32) {
+      // NVVM load and store instrinsic names are overloaded on the
+      // source/destination pointer type. Pointer is the first argument in the
+      // corresponding NVVM Op.
+      fn = llvm::Intrinsic::getDeclaration(module, intrinsic,
+                                           {args[0]->getType()});
+    } else {
+      fn = llvm::Intrinsic::getDeclaration(module, intrinsic, {});
+    }
+  } else {
+    fn = llvm::Intrinsic::getDeclaration(module, intrinsic);
+  }
+  return builder.CreateCall(fn, args);
+}
+
 /// Given a single MLIR operation, create the corresponding LLVM IR operation
 /// using the `builder`.
 LogicalResult
-ModuleTranslation::convertOperation(Operation &opInst,
+ModuleTranslation::convertOperation(Operation &op,
                                     llvm::IRBuilderBase &builder) {
-  if (failed(iface.convertOperation(&opInst, builder, *this)))
-    return opInst.emitError("unsupported or non-LLVM operation: ")
-           << opInst.getName();
+  const LLVMTranslationDialectInterface *opIface = iface.getInterfaceFor(&op);
+  if (!opIface)
+    return op.emitError("cannot be converted to LLVM IR: missing "
+                        "`LLVMTranslationDialectInterface` registration for "
+                        "dialect for op: ")
+           << op.getName();
 
-  return convertDialectAttributes(&opInst);
+  if (failed(opIface->convertOperation(&op, builder, *this)))
+    return op.emitError("LLVM Translation failed for operation: ")
+           << op.getName();
+
+  return convertDialectAttributes(&op);
 }
 
 /// Convert block to LLVM IR.  Unless `ignoreArguments` is set, emit PHI nodes
@@ -364,12 +414,31 @@ static Block &getModuleBody(Operation *module) {
   return module->getRegion(0).front();
 }
 
+/// A helper method to decide if a constant must not be set as a global variable
+/// initializer. For an external linkage variable, the variable with an
+/// initializer is considered externally visible and defined in this module, the
+/// variable without an initializer is externally available and is defined
+/// elsewhere.
+static bool shouldDropGlobalInitializer(llvm::GlobalValue::LinkageTypes linkage,
+                                        llvm::Constant *cst) {
+  return (linkage == llvm::GlobalVariable::ExternalLinkage && !cst) ||
+         linkage == llvm::GlobalVariable::ExternalWeakLinkage;
+}
+
+/// Sets the runtime preemption specifier of `gv` to dso_local if
+/// `dsoLocalRequested` is true, otherwise it is left unchanged.
+static void addRuntimePreemptionSpecifier(bool dsoLocalRequested,
+                                          llvm::GlobalValue *gv) {
+  if (dsoLocalRequested)
+    gv->setDSOLocal(true);
+}
+
 /// Create named global variables that correspond to llvm.mlir.global
 /// definitions.
 LogicalResult ModuleTranslation::convertGlobals() {
   for (auto op : getModuleBody(mlirModule).getOps<LLVM::GlobalOp>()) {
     llvm::Type *type = convertType(op.getType());
-    llvm::Constant *cst = llvm::UndefValue::get(type);
+    llvm::Constant *cst = nullptr;
     if (op.getValueOrNull()) {
       // String attributes are treated separately because they cannot appear as
       // in-function constants and are thus not supported by getLLVMConstant.
@@ -381,7 +450,44 @@ LogicalResult ModuleTranslation::convertGlobals() {
                                          *this))) {
         return failure();
       }
-    } else if (Block *initializer = op.getInitializerBlock()) {
+    }
+
+    auto linkage = convertLinkageToLLVM(op.linkage());
+    auto addrSpace = op.addr_space();
+
+    // LLVM IR requires constant with linkage other than external or weak
+    // external to have initializers. If MLIR does not provide an initializer,
+    // default to undef.
+    bool dropInitializer = shouldDropGlobalInitializer(linkage, cst);
+    if (!dropInitializer && !cst)
+      cst = llvm::UndefValue::get(type);
+    else if (dropInitializer && cst)
+      cst = nullptr;
+
+    auto *var = new llvm::GlobalVariable(
+        *llvmModule, type, op.constant(), linkage, cst, op.sym_name(),
+        /*InsertBefore=*/nullptr, llvm::GlobalValue::NotThreadLocal, addrSpace);
+
+    if (op.unnamed_addr().hasValue())
+      var->setUnnamedAddr(convertUnnamedAddrToLLVM(*op.unnamed_addr()));
+
+    if (op.section().hasValue())
+      var->setSection(*op.section());
+
+    addRuntimePreemptionSpecifier(op.dso_local(), var);
+
+    Optional<uint64_t> alignment = op.alignment();
+    if (alignment.hasValue())
+      var->setAlignment(llvm::MaybeAlign(alignment.getValue()));
+
+    globalsMapping.try_emplace(op, var);
+  }
+
+  // Convert global variable bodies. This is done after all global variables
+  // have been created in LLVM IR because a global body may refer to another
+  // global or itself. So all global variables need to be mapped first.
+  for (auto op : getModuleBody(mlirModule).getOps<LLVM::GlobalOp>()) {
+    if (Block *initializer = op.getInitializerBlock()) {
       llvm::IRBuilder<> builder(llvmModule->getContext());
       for (auto &op : initializer->without_terminator()) {
         if (failed(convertOperation(op, builder)) ||
@@ -389,21 +495,12 @@ LogicalResult ModuleTranslation::convertGlobals() {
           return emitError(op.getLoc(), "unemittable constant value");
       }
       ReturnOp ret = cast<ReturnOp>(initializer->getTerminator());
-      cst = cast<llvm::Constant>(lookupValue(ret.getOperand(0)));
+      llvm::Constant *cst =
+          cast<llvm::Constant>(lookupValue(ret.getOperand(0)));
+      auto *global = cast<llvm::GlobalVariable>(lookupGlobal(op));
+      if (!shouldDropGlobalInitializer(global->getLinkage(), cst))
+        global->setInitializer(cst);
     }
-
-    auto linkage = convertLinkageToLLVM(op.linkage());
-    bool anyExternalLinkage =
-        ((linkage == llvm::GlobalVariable::ExternalLinkage &&
-          isa<llvm::UndefValue>(cst)) ||
-         linkage == llvm::GlobalVariable::ExternalWeakLinkage);
-    auto addrSpace = op.addr_space();
-    auto *var = new llvm::GlobalVariable(
-        *llvmModule, type, op.constant(), linkage,
-        anyExternalLinkage ? nullptr : cst, op.sym_name(),
-        /*InsertBefore=*/nullptr, llvm::GlobalValue::NotThreadLocal, addrSpace);
-
-    globalsMapping.try_emplace(op, var);
   }
 
   return success();
@@ -425,7 +522,7 @@ static LogicalResult checkedAddLLVMFnAttribute(Location loc,
     return success();
   }
 
-  if (llvm::Attribute::doesAttrKindHaveArgument(kind)) {
+  if (llvm::Attribute::isIntAttrKind(kind)) {
     if (value.empty())
       return emitError(loc) << "LLVM attribute '" << key << "' expects a value";
 
@@ -504,7 +601,7 @@ LogicalResult ModuleTranslation::convertOneFunction(LLVMFuncOp func) {
     llvm::Argument &llvmArg = std::get<1>(kvp);
     BlockArgument mlirArg = std::get<0>(kvp);
 
-    if (auto attr = func.getArgAttrOfType<BoolAttr>(
+    if (auto attr = func.getArgAttrOfType<UnitAttr>(
             argIdx, LLVMDialect::getNoAliasAttrName())) {
       // NB: Attribute already verified to be boolean, so check if we can indeed
       // attach the attribute to this argument, based on its type.
@@ -512,8 +609,7 @@ LogicalResult ModuleTranslation::convertOneFunction(LLVMFuncOp func) {
       if (!argTy.isa<LLVM::LLVMPointerType>())
         return func.emitError(
             "llvm.noalias attribute attached to LLVM non-pointer argument");
-      if (attr.getValue())
-        llvmArg.addAttr(llvm::Attribute::AttrKind::NoAlias);
+      llvmArg.addAttr(llvm::Attribute::AttrKind::NoAlias);
     }
 
     if (auto attr = func.getArgAttrOfType<IntegerAttr>(
@@ -609,6 +705,7 @@ LogicalResult ModuleTranslation::convertFunctionSignatures() {
     llvm::Function *llvmFunc = cast<llvm::Function>(llvmFuncCst.getCallee());
     llvmFunc->setLinkage(convertLinkageToLLVM(function.linkage()));
     mapFunction(function.getName(), llvmFunc);
+    addRuntimePreemptionSpecifier(function.dso_local(), llvmFunc);
 
     // Forward the pass-through attributes to LLVM.
     if (failed(forwardPassthroughAttributes(function.getLoc(),
@@ -677,6 +774,78 @@ void ModuleTranslation::setAccessGroupsMetadata(Operation *op,
   }
 }
 
+LogicalResult ModuleTranslation::createAliasScopeMetadata() {
+  mlirModule->walk([&](LLVM::MetadataOp metadatas) {
+    // Create the domains first, so they can be reference below in the scopes.
+    DenseMap<Operation *, llvm::MDNode *> aliasScopeDomainMetadataMapping;
+    metadatas.walk([&](LLVM::AliasScopeDomainMetadataOp op) {
+      llvm::LLVMContext &ctx = llvmModule->getContext();
+      llvm::SmallVector<llvm::Metadata *, 2> operands;
+      operands.push_back({}); // Placeholder for self-reference
+      if (Optional<StringRef> description = op.description())
+        operands.push_back(llvm::MDString::get(ctx, description.getValue()));
+      llvm::MDNode *domain = llvm::MDNode::get(ctx, operands);
+      domain->replaceOperandWith(0, domain); // Self-reference for uniqueness
+      aliasScopeDomainMetadataMapping.insert({op, domain});
+    });
+
+    // Now create the scopes, referencing the domains created above.
+    metadatas.walk([&](LLVM::AliasScopeMetadataOp op) {
+      llvm::LLVMContext &ctx = llvmModule->getContext();
+      assert(isa<LLVM::MetadataOp>(op->getParentOp()));
+      auto metadataOp = dyn_cast<LLVM::MetadataOp>(op->getParentOp());
+      Operation *domainOp =
+          SymbolTable::lookupNearestSymbolFrom(metadataOp, op.domainAttr());
+      llvm::MDNode *domain = aliasScopeDomainMetadataMapping.lookup(domainOp);
+      assert(domain && "Scope's domain should already be valid");
+      llvm::SmallVector<llvm::Metadata *, 3> operands;
+      operands.push_back({}); // Placeholder for self-reference
+      operands.push_back(domain);
+      if (Optional<StringRef> description = op.description())
+        operands.push_back(llvm::MDString::get(ctx, description.getValue()));
+      llvm::MDNode *scope = llvm::MDNode::get(ctx, operands);
+      scope->replaceOperandWith(0, scope); // Self-reference for uniqueness
+      aliasScopeMetadataMapping.insert({op, scope});
+    });
+  });
+  return success();
+}
+
+llvm::MDNode *
+ModuleTranslation::getAliasScope(Operation &opInst,
+                                 SymbolRefAttr aliasScopeRef) const {
+  StringAttr metadataName = aliasScopeRef.getRootReference();
+  StringAttr scopeName = aliasScopeRef.getLeafReference();
+  auto metadataOp = SymbolTable::lookupNearestSymbolFrom<LLVM::MetadataOp>(
+      opInst.getParentOp(), metadataName);
+  Operation *aliasScopeOp =
+      SymbolTable::lookupNearestSymbolFrom(metadataOp, scopeName);
+  return aliasScopeMetadataMapping.lookup(aliasScopeOp);
+}
+
+void ModuleTranslation::setAliasScopeMetadata(Operation *op,
+                                              llvm::Instruction *inst) {
+  auto populateScopeMetadata = [this, op, inst](StringRef attrName,
+                                                StringRef llvmMetadataName) {
+    auto scopes = op->getAttrOfType<ArrayAttr>(attrName);
+    if (!scopes || scopes.empty())
+      return;
+    llvm::Module *module = inst->getModule();
+    SmallVector<llvm::Metadata *> scopeMDs;
+    for (SymbolRefAttr scopeRef : scopes.getAsRange<SymbolRefAttr>())
+      scopeMDs.push_back(getAliasScope(*op, scopeRef));
+    llvm::MDNode *unionMD = nullptr;
+    if (scopeMDs.size() == 1)
+      unionMD = llvm::cast<llvm::MDNode>(scopeMDs.front());
+    else if (scopeMDs.size() >= 2)
+      unionMD = llvm::MDNode::get(module->getContext(), scopeMDs);
+    inst->setMetadata(module->getMDKindID(llvmMetadataName), unionMD);
+  };
+
+  populateScopeMetadata(LLVMDialect::getAliasScopesAttrName(), "alias.scope");
+  populateScopeMetadata(LLVMDialect::getNoAliasScopesAttrName(), "noalias");
+}
+
 llvm::Type *ModuleTranslation::convertType(Type type) {
   return typeTranslator.translateType(type);
 }
@@ -700,6 +869,8 @@ llvm::NamedMDNode *
 ModuleTranslation::getOrInsertNamedModuleMetadata(StringRef name) {
   return llvmModule->getOrInsertNamedMetadata(name);
 }
+
+void ModuleTranslation::StackFrame::anchor() {}
 
 static std::unique_ptr<llvm::Module>
 prepareLLVMModule(Operation *m, llvm::LLVMContext &llvmContext,
@@ -742,6 +913,8 @@ mlir::translateModuleToLLVMIR(Operation *module, llvm::LLVMContext &llvmContext,
   if (failed(translator.convertGlobals()))
     return nullptr;
   if (failed(translator.createAccessGroupMetadata()))
+    return nullptr;
+  if (failed(translator.createAliasScopeMetadata()))
     return nullptr;
   if (failed(translator.convertFunctions()))
     return nullptr;

@@ -14,6 +14,8 @@
 
 #include "mlir/Dialect/GPU/Passes.h"
 #include "mlir/Pass/Pass.h"
+#include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
+#include "mlir/Target/LLVMIR/Export.h"
 #include "llvm/IR/LegacyPassManager.h"
 #include "llvm/Support/TargetRegistry.h"
 #include "llvm/Support/TargetSelect.h"
@@ -27,13 +29,7 @@ gpu::SerializeToBlobPass::SerializeToBlobPass(TypeID passID)
     : OperationPass<gpu::GPUModuleOp>(passID) {}
 
 gpu::SerializeToBlobPass::SerializeToBlobPass(const SerializeToBlobPass &other)
-    : OperationPass<gpu::GPUModuleOp>(other) {
-  // Pass::Option has no copy constructor, copy them manually.
-  triple = other.triple;
-  chip = other.chip;
-  features = other.features;
-  gpuBinaryAnnotation = other.gpuBinaryAnnotation;
-}
+    : OperationPass<gpu::GPUModuleOp>(other) {}
 
 static std::string translateToISA(llvm::Module &llvmModule,
                                   llvm::TargetMachine &targetMachine) {
@@ -70,8 +66,15 @@ void gpu::SerializeToBlobPass::runOnOperation() {
     return signalPassFailure();
 
   // Add the blob as module attribute.
-  auto attr = StringAttr::get(&getContext(), {blob->data(), blob->size()});
+  auto attr =
+      StringAttr::get(&getContext(), StringRef(blob->data(), blob->size()));
   getOperation()->setAttr(gpuBinaryAnnotation, attr);
+}
+
+void gpu::SerializeToBlobPass::getDependentDialects(
+    DialectRegistry &registry) const {
+  registerLLVMDialectTranslation(registry);
+  OperationPass<gpu::GPUModuleOp>::getDependentDialects(registry);
 }
 
 std::unique_ptr<llvm::TargetMachine>
@@ -92,4 +95,10 @@ gpu::SerializeToBlobPass::createTargetMachine() {
   }
 
   return std::unique_ptr<llvm::TargetMachine>{machine};
+}
+
+std::unique_ptr<llvm::Module>
+gpu::SerializeToBlobPass::translateToLLVMIR(llvm::LLVMContext &llvmContext) {
+  return translateModuleToLLVMIR(getOperation(), llvmContext,
+                                 "LLVMDialectModule");
 }

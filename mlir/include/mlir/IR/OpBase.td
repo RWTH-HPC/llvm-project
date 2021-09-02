@@ -211,9 +211,17 @@ def IsTensorTypePred : CPred<"$_self.isa<::mlir::TensorType>()">;
 // Whether a type is a MemRefType.
 def IsMemRefTypePred : CPred<"$_self.isa<::mlir::MemRefType>()">;
 
-// Whether a type is an  IsUnrankedMemRefType
+// Whether a type is an UnrankedMemRefType
 def IsUnrankedMemRefTypePred
         : CPred<"$_self.isa<::mlir::UnrankedMemRefType>()">;
+
+// Whether a type is an UnrankedTensorType
+def IsUnrankedTensorTypePred
+        : CPred<"$_self.isa<::mlir::UnrankedTensorType>()">;
+
+// Whether a type is a BaseMemRefType
+def IsBaseMemRefTypePred
+        : CPred<"$_self.isa<::mlir::BaseMemRefType>()">;
 
 // Whether a type is a ShapedType.
 def IsShapedTypePred : CPred<"$_self.isa<::mlir::ShapedType>()">;
@@ -240,7 +248,7 @@ class Dialect {
   string description = ?;
 
   // A list of dialects this dialect will load on construction as dependencies.
-  // These are dialects that this dialect may involved in canonicalization
+  // These are dialects that this dialect may involve in canonicalization
   // pattern or interfaces.
   list<string> dependentDialects = [];
 
@@ -263,6 +271,10 @@ class Dialect {
   // If this dialect overrides the hook for materializing constants.
   bit hasConstantMaterializer = 0;
 
+  /// If the dialect definition provides a non-default destructor.
+  /// If false, a default destructor implementation will be generated.
+  bit hasNonDefaultDestructor = 0;
+
   // If this dialect overrides the hook for verifying operation attributes.
   bit hasOperationAttrVerify = 0;
 
@@ -272,6 +284,12 @@ class Dialect {
 
   // If this dialect overrides the hook for verifying region result attributes.
   bit hasRegionResultAttrVerify = 0;
+
+  // If this dialect overrides the hook for op interface fallback.
+  bit hasOperationInterfaceFallback = 0;
+
+  // If this dialect overrides the hook for canonicalization patterns.
+  bit hasCanonicalizer = 0;
 }
 
 //===----------------------------------------------------------------------===//
@@ -304,6 +322,16 @@ class DialectType<Dialect d, Pred condition, string descr = "",
 // class is used for supporting variadic operands/results.
 class Variadic<Type type> : TypeConstraint<type.predicate, type.summary> {
   Type baseType = type;
+}
+
+// A nested variadic type constraint. It expands to zero or more variadic ranges
+// of the base type. This class is used for supporting variadic operands and
+// results. `variadicSegmentAttrName` should correspond to the name of an
+// I32ElementsAttr argument that provides the sizes of the inner variadic
+// operand groups.
+class VariadicOfVariadic<Type type, string variadicSegmentAttrName>
+    : Variadic<type> {
+  string segmentAttrName = variadicSegmentAttrName;
 }
 
 // An optional type constraint. It expands to either zero or one of the base
@@ -610,6 +638,12 @@ class RankedTensorOf<list<Type> allowedTypes> :
 
 def AnyTensor : TensorOf<[AnyType]>;
 
+// Unranked Memref type
+class UnrankedTensorOf<list<Type> allowedTypes> :
+    ShapedContainerType<allowedTypes,
+                        IsUnrankedTensorTypePred,
+                        "unranked.tensor", "::mlir::UnrankedTensorType">;
+
 def AnyRankedTensor : RankedTensorOf<[AnyType]>;
 
 // TODO: Have an easy way to add another constraint to a type.
@@ -645,10 +679,13 @@ class 3DTensorOf<list<Type> allowedTypes> : TensorRankOf<allowedTypes, [3]>;
 class 4DTensorOf<list<Type> allowedTypes> : TensorRankOf<allowedTypes, [4]>;
 
 // Unranked Memref type
-def AnyUnrankedMemRef :
-    ShapedContainerType<[AnyType],
+class UnrankedMemRefOf<list<Type> allowedTypes> :
+    ShapedContainerType<allowedTypes,
                         IsUnrankedMemRefTypePred, "unranked.memref",
                         "::mlir::UnrankedMemRefType">;
+
+def AnyUnrankedMemRef : UnrankedMemRefOf<[AnyType]>;
+
 // Memref type.
 
 // Memrefs are blocks of data with fixed type and rank.
@@ -657,6 +694,9 @@ class MemRefOf<list<Type> allowedTypes> :
                         "::mlir::MemRefType">;
 
 def AnyMemRef : MemRefOf<[AnyType]>;
+
+class RankedOrUnrankedMemRefOf<list<Type> allowedTypes>:
+    AnyTypeOf<[UnrankedMemRefOf<allowedTypes>, MemRefOf<allowedTypes>]>;
 
 def AnyRankedOrUnrankedMemRef: AnyTypeOf<[AnyUnrankedMemRef, AnyMemRef]>;
 
@@ -755,11 +795,11 @@ def BoolLike : TypeConstraint<Or<[I1.predicate, VectorOf<[I1]>.predicate,
     "bool-like">;
 
 // Type constraint for signless-integer-like types: signless integers, indices,
-// vectors of signless integers, tensors of signless integers.
+// vectors of signless integers or indices, tensors of signless integers.
 def SignlessIntegerLike : TypeConstraint<Or<[
         AnySignlessInteger.predicate, Index.predicate,
-        VectorOf<[AnySignlessInteger]>.predicate,
-        TensorOf<[AnySignlessInteger]>.predicate]>,
+        VectorOf<[AnySignlessInteger, Index]>.predicate,
+        TensorOf<[AnySignlessInteger, Index]>.predicate]>,
     "signless-integer-like">;
 
 // Type constraint for float-like types: floats, vectors or tensors thereof.
@@ -1142,7 +1182,9 @@ class BitEnumAttrCase<string sym, int val, string str = sym> :
 }
 
 // Additional information for an enum attribute.
-class EnumAttrInfo<string name, list<EnumAttrCaseInfo> cases> {
+class EnumAttrInfo<
+    string name, list<EnumAttrCaseInfo> cases, Attr baseClass> :
+      Attr<baseClass.predicate, baseClass.summary> {
   // The C++ enum class name
   string className = name;
 
@@ -1188,6 +1230,28 @@ class EnumAttrInfo<string name, list<EnumAttrCaseInfo> cases> {
   // static constexpr unsigned <fn-name>();
   // ```
   string maxEnumValFnName = "getMaxEnumValFor" # name;
+
+  // Generate specialized Attribute class
+  bit genSpecializedAttr = 1;
+  // The underlying Attribute class, which holds the enum value
+  Attr baseAttrClass = baseClass;
+  // The name of specialized Enum Attribute class
+  string specializedAttrClassName = name # Attr;
+
+  // Override Attr class fields for specialized class
+  let predicate = !if(genSpecializedAttr,
+    CPred<"$_self.isa<" # cppNamespace # "::" # specializedAttrClassName # ">()">,
+    baseAttrClass.predicate);
+  let storageType = !if(genSpecializedAttr,
+    cppNamespace # "::" # specializedAttrClassName,
+    baseAttrClass.storageType);
+  let returnType = !if(genSpecializedAttr,
+    cppNamespace # "::" # className,
+    baseAttrClass.returnType);
+  let constBuilderCall = !if(genSpecializedAttr,
+    cppNamespace # "::" # specializedAttrClassName # "::get($_builder.getContext(), $0)",
+    baseAttrClass.constBuilderCall);
+  let valueType = baseAttrClass.valueType;
 }
 
 // An enum attribute backed by StringAttr.
@@ -1195,47 +1259,44 @@ class EnumAttrInfo<string name, list<EnumAttrCaseInfo> cases> {
 // Op attributes of this kind are stored as StringAttr. Extra verification will
 // be generated on the string though: only the symbols of the allowed cases are
 // permitted as the string value.
-class StrEnumAttr<string name, string summary, list<StrEnumAttrCase> cases>
-  : EnumAttrInfo<name, cases>,
+class StrEnumAttr<string name, string summary, list<StrEnumAttrCase> cases> :
+  EnumAttrInfo<name, cases,
     StringBasedAttr<
       And<[StrAttr.predicate, Or<!foreach(case, cases, case.predicate)>]>,
       !if(!empty(summary), "allowed string cases: " #
           !interleave(!foreach(case, cases, "'" # case.symbol # "'"), ", "),
-          summary)>;
+          summary)>> {
+  // Disable specialized Attribute class for `StringAttr` backend by default.
+  let genSpecializedAttr = 0;
+}
 
 // An enum attribute backed by IntegerAttr.
 //
 // Op attributes of this kind are stored as IntegerAttr. Extra verification will
 // be generated on the integer though: only the values of the allowed cases are
 // permitted as the integer value.
-class IntEnumAttr<I intType, string name, string summary,
-                  list<IntEnumAttrCaseBase> cases> :
-    EnumAttrInfo<name, cases>,
-    SignlessIntegerAttrBase<intType,
-      !if(!empty(summary), "allowed " # intType.summary # " cases: " #
-          !interleave(!foreach(case, cases, case.value), ", "), summary)> {
+class IntEnumAttrBase<I intType, list<IntEnumAttrCaseBase> cases, string summary> :
+    SignlessIntegerAttrBase<intType, summary> {
   let predicate = And<[
-    SignlessIntegerAttrBase<intType, "">.predicate,
+    SignlessIntegerAttrBase<intType, summary>.predicate,
     Or<!foreach(case, cases, case.predicate)>]>;
 }
 
-class I32EnumAttr<string name, string summary,
-                  list<I32EnumAttrCase> cases> :
+class IntEnumAttr<I intType, string name, string summary,
+                  list<IntEnumAttrCaseBase> cases> :
+  EnumAttrInfo<name, cases,
+    IntEnumAttrBase<intType, cases,
+      !if(!empty(summary), "allowed " # intType.summary # " cases: " #
+          !interleave(!foreach(case, cases, case.value), ", "),
+          summary)>>;
+
+class I32EnumAttr<string name, string summary, list<I32EnumAttrCase> cases> :
     IntEnumAttr<I32, name, summary, cases> {
-  let returnType = cppNamespace # "::" # name;
   let underlyingType = "uint32_t";
-  let convertFromStorage = "static_cast<" # returnType # ">($_self.getInt())";
-  let constBuilderCall =
-          "$_builder.getI32IntegerAttr(static_cast<int32_t>($0))";
 }
-class I64EnumAttr<string name, string summary,
-                  list<I64EnumAttrCase> cases> :
+class I64EnumAttr<string name, string summary, list<I64EnumAttrCase> cases> :
     IntEnumAttr<I64, name, summary, cases> {
-  let returnType = cppNamespace # "::" # name;
   let underlyingType = "uint64_t";
-  let convertFromStorage = "static_cast<" # returnType # ">($_self.getInt())";
-  let constBuilderCall =
-          "$_builder.getI64IntegerAttr(static_cast<int64_t>($0))";
 }
 
 // A bit enum stored with 32-bit IntegerAttr.
@@ -1244,9 +1305,8 @@ class I64EnumAttr<string name, string summary,
 // be generated on the integer to make sure only allowed bit are set. Besides,
 // helper methods are generated to parse a string separated with a specified
 // delimiter to a symbol and vice versa.
-class BitEnumAttr<string name, string summary,
-                  list<BitEnumAttrCase> cases> :
-    EnumAttrInfo<name, cases>, SignlessIntegerAttrBase<I32, summary> {
+class BitEnumAttrBase<list<BitEnumAttrCase> cases, string summary> :
+    SignlessIntegerAttrBase<I32, summary> {
   let predicate = And<[
     I32Attr.predicate,
     // Make sure we don't have unknown bit set.
@@ -1254,12 +1314,11 @@ class BitEnumAttr<string name, string summary,
           # !interleave(!foreach(case, cases, case.value # "u"), "|") #
           ")))">
   ]>;
+}
 
-  let returnType = cppNamespace # "::" # name;
+class BitEnumAttr<string name, string summary, list<BitEnumAttrCase> cases> :
+    EnumAttrInfo<name, cases, BitEnumAttrBase<cases, summary>> {
   let underlyingType = "uint32_t";
-  let convertFromStorage = "static_cast<" # returnType # ">($_self.getInt())";
-  let constBuilderCall =
-          "$_builder.getI32IntegerAttr(static_cast<int32_t>($0))";
 
   // We need to return a string because we may concatenate symbols for multiple
   // bits together.
@@ -1311,13 +1370,15 @@ def IndexElementsAttr
                                       .isIndex()}]>,
                           "index elements attribute">;
 
-class AnyIntElementsAttr<int width> : IntElementsAttrBase<
+def AnyIntElementsAttr : IntElementsAttrBase<CPred<"true">, "integer elements attribute">;
+
+class IntElementsAttrOf<int width> : IntElementsAttrBase<
   CPred<"$_self.cast<::mlir::DenseIntElementsAttr>().getType()."
         "getElementType().isInteger(" # width # ")">,
   width # "-bit integer elements attribute">;
 
-def AnyI32ElementsAttr : AnyIntElementsAttr<32>;
-def AnyI64ElementsAttr : AnyIntElementsAttr<64>;
+def AnyI32ElementsAttr : IntElementsAttrOf<32>;
+def AnyI64ElementsAttr : IntElementsAttrOf<64>;
 
 class SignlessIntElementsAttr<int width> : IntElementsAttrBase<
   CPred<"$_self.cast<::mlir::DenseIntElementsAttr>().getType()."
@@ -1439,7 +1500,7 @@ class TypedArrayAttrBase<Attr element, string summary>: ArrayAttrBase<
       CPred<"$_self.isa<::mlir::ArrayAttr>()">,
       // Guarantee all elements satisfy the constraints from `element`
       Concat<"::llvm::all_of($_self.cast<::mlir::ArrayAttr>(), "
-                            "[](::mlir::Attribute attr) { return ",
+                            "[&](::mlir::Attribute attr) { return ",
                                SubstLeaves<"$_self", "attr", element.predicate>,
                             "; })">]>,
     summary> {
@@ -1521,15 +1582,16 @@ def SymbolRefAttr : Attr<CPred<"$_self.isa<::mlir::SymbolRefAttr>()">,
   let storageType = [{ ::mlir::SymbolRefAttr }];
   let returnType = [{ ::mlir::SymbolRefAttr }];
   let valueType = NoneType;
-  let constBuilderCall = "$_builder.getSymbolRefAttr($0)";
+  let constBuilderCall = "SymbolRefAttr::get($_builder.getContext(), $0)";
   let convertFromStorage = "$_self";
 }
+
 def FlatSymbolRefAttr : Attr<CPred<"$_self.isa<::mlir::FlatSymbolRefAttr>()">,
                                    "flat symbol reference attribute"> {
   let storageType = [{ ::mlir::FlatSymbolRefAttr }];
   let returnType = [{ ::llvm::StringRef }];
   let valueType = NoneType;
-  let constBuilderCall = "$_builder.getSymbolRefAttr($0)";
+  let constBuilderCall = "SymbolRefAttr::get($_builder.getContext(), $0)";
   let convertFromStorage = "$_self.getValue()";
 }
 
@@ -1567,7 +1629,7 @@ class DerivedAttr<code ret, code b, code convert = ""> :
 }
 
 // Derived attribute that returns a mlir::Type.
-class DerivedTypeAttr<code body> : DerivedAttr<"Type", body> {
+class DerivedTypeAttr<code body> : DerivedAttr<"::mlir::Type", body> {
   let convertFromStorage = "::mlir::TypeAttr::get($_self)";
 }
 
@@ -1673,7 +1735,7 @@ def IsNullAttr : AttrConstraint<
 class ReferToOp<string opClass> : AttrConstraint<
     CPred<"isa_and_nonnull<" # opClass # ">("
             "::mlir::SymbolTable::lookupNearestSymbolFrom("
-              "&$_op, $_self.cast<::mlir::FlatSymbolRefAttr>().getValue()))">,
+              "&$_op, $_self.cast<::mlir::FlatSymbolRefAttr>().getAttr()))">,
     "referencing to a '" # opClass # "' symbol">;
 
 //===----------------------------------------------------------------------===//
@@ -1710,41 +1772,65 @@ def AnySuccessor : Successor<?, "any successor">;
 class VariadicSuccessor<Successor successor>
   : Successor<successor.predicate, successor.summary>;
 
+
+//===----------------------------------------------------------------------===//
+// Trait definitions
+//===----------------------------------------------------------------------===//
+
+// Trait represents a trait regarding an attribute, operation, or type.
+class Trait;
+
+// NativeTrait corresponds to the MLIR C++ trait mechanism. The purpose to wrap
+// around C++ symbol string with this class is to make traits specified for
+// entities in TableGen less alien and more integrated.
+class NativeTrait<string name, string entityType> : Trait {
+  string trait = name;
+  string cppNamespace = "::mlir::" # entityType # "Trait";
+}
+
+// ParamNativeTrait corresponds to the template-parameterized traits in the C++
+// implementation. MLIR uses nested class templates to implement such traits
+// leading to constructs of the form "TraitName<Parameters>::Impl". Use the
+// value in `prop` as the trait name and the value in `params` as parameters to
+// construct the native trait class name.
+class ParamNativeTrait<string prop, string params, string entityType>
+    : NativeTrait<prop # "<" # params # ">::Impl", entityType>;
+
+// GenInternalTrait is a trait that does not have direct C++ mapping but affects
+// an entities definition generator internals, like how operation builders and
+// operand/attribute/result getters are generated.
+class GenInternalTrait<string prop, string entityType> : Trait {
+  string trait = "::mlir::" # entityType # "Trait::" # prop;
+}
+
+// PredTrait is a trait implemented by way of a predicate on an entity.
+class PredTrait<string descr, Pred pred> : Trait {
+  string summary = descr;
+  Pred predicate = pred;
+}
+
 //===----------------------------------------------------------------------===//
 // OpTrait definitions
 //===----------------------------------------------------------------------===//
 
-// OpTrait represents a trait regarding an op.
+// OpTrait represents a trait regarding an operation.
+// TODO: Remove this class in favor of using Trait.
 class OpTrait;
 
-// NativeOpTrait corresponds to the MLIR C++ OpTrait mechanism. The
-// purpose to wrap around C++ symbol string with this class is to make
-// traits specified for ops in TableGen less alien and more integrated.
-class NativeOpTrait<string name> : OpTrait {
-  string trait = name;
-  string cppNamespace = "::mlir::OpTrait";
+// Define a OpTrait corresponding to a list of OpTraits, this allows for
+// specifying a list of traits as trait. Avoids needing to do
+// `[Traits, ...] # ListOfTraits # [Others, ...]` while still allowing providing
+// convenient groupings.
+class OpTraitList<list<OpTrait> props> : OpTrait {
+  list<OpTrait> traits = props;
 }
 
-// ParamNativeOpTrait corresponds to the template-parameterized traits in the
-// C++ implementation.  MLIR uses nested class templates to implement such
-// traits leading to constructs of the form "TraitName<Parameters>::Impl". Use
-// the value in `prop` as the trait name and the value in `params` as
-// parameters to construct the native trait class name.
+// These classes are used to define operation specific traits.
+class NativeOpTrait<string name> : NativeTrait<name, "Op">, OpTrait;
 class ParamNativeOpTrait<string prop, string params>
-    : NativeOpTrait<prop # "<" # params # ">::Impl">;
-
-// GenInternalOpTrait is an op trait that does not have direct C++ mapping but
-// affects op definition generator internals, like how op builders and
-// operand/attribute/result getters are generated.
-class GenInternalOpTrait<string prop> : OpTrait {
-  string trait = "::mlir::OpTrait::" # prop;
-}
-
-// PredOpTrait is an op trait implemented by way of a predicate on the op.
-class PredOpTrait<string descr, Pred pred> : OpTrait {
-  string summary = descr;
-  Pred predicate = pred;
-}
+    : ParamNativeTrait<prop, params, "Op">, OpTrait;
+class GenInternalOpTrait<string prop> : GenInternalTrait<prop, "Op">, OpTrait;
+class PredOpTrait<string descr, Pred pred> : PredTrait<descr, pred>, OpTrait;
 
 // Op defines an affine scope.
 def AffineScope : NativeOpTrait<"AffineScope">;
@@ -1805,9 +1891,15 @@ def ElementwiseMappable {
   ];
 }
 
+// Op's regions have a single block.
+def SingleBlock : NativeOpTrait<"SingleBlock">;
+
 // Op's regions have a single block with the specified terminator.
 class SingleBlockImplicitTerminator<string op>
     : ParamNativeOpTrait<"SingleBlockImplicitTerminator", op>;
+
+// Op's regions don't have terminator.
+def NoTerminator : NativeOpTrait<"NoTerminator">;
 
 // Op's parent operation is the provided one.
 class HasParent<string op>
@@ -1865,21 +1957,26 @@ class CArg<string ty, string value = ""> {
   string defaultValue = value;
 }
 
-// OpInterfaceTrait corresponds to a specific 'OpInterface' class defined in
-// C++. The purpose to wrap around C++ symbol string with this class is to make
+// InterfaceTrait corresponds to a specific 'Interface' class defined in C++.
+// The purpose to wrap around C++ symbol string with this class is to make
 // interfaces specified for ops in TableGen less alien and more integrated.
-class OpInterfaceTrait<string name, code verifyBody = [{}]>
-          : NativeOpTrait<""> {
+class InterfaceTrait<string name> : NativeTrait<"", ""> {
   let trait = name # "::Trait";
   let cppNamespace = "";
-
-  // Specify the body of the verification function. `$_op` will be replaced with
-  // the operation being verified.
-  code verify = verifyBody;
 
   // An optional code block containing extra declarations to place in the
   // interface trait declaration.
   code extraTraitClassDeclaration = "";
+}
+
+// OpInterfaceTrait corresponds to a specific 'OpInterface' class defined in
+// C++. The purpose to wrap around C++ symbol string with this class is to make
+// interfaces specified for ops in TableGen less alien and more integrated.
+class OpInterfaceTrait<string name, code verifyBody = [{}]>
+    : InterfaceTrait<name>, OpTrait {
+  // Specify the body of the verification function. `$_op` will be replaced with
+  // the operation being verified.
+  code verify = verifyBody;
 }
 
 // This class represents a single, optionally static, interface method.
@@ -1937,39 +2034,52 @@ class Interface<string name> {
 }
 
 // AttrInterface represents an interface registered to an attribute.
-class AttrInterface<string name> : Interface<name> {
-  // An optional code block containing extra declarations to place in the
-  // interface trait declaration.
-  code extraTraitClassDeclaration = "";
-}
+class AttrInterface<string name> : Interface<name>, InterfaceTrait<name>;
 
 // OpInterface represents an interface registered to an operation.
 class OpInterface<string name> : Interface<name>, OpInterfaceTrait<name>;
 
 // TypeInterface represents an interface registered to a type.
-class TypeInterface<string name> : Interface<name> {
-  // An optional code block containing extra declarations to place in the
-  // interface trait declaration.
-  code extraTraitClassDeclaration = "";
-}
+class TypeInterface<string name> : Interface<name>, InterfaceTrait<name>;
 
-// Whether to declare the op interface methods in the op's header. This class
-// simply wraps an OpInterface but is used to indicate that the method
+// Whether to declare the interface methods in the user entity's header. This
+// class simply wraps an Interface but is used to indicate that the method
 // declarations should be generated. This class takes an optional set of methods
 // that should have declarations generated even if the method has a default
 // implementation.
-class DeclareOpInterfaceMethods<OpInterface interface,
-                                list<string> overridenMethods = []>
-      : OpInterface<interface.cppClassName> {
-    let description = interface.description;
-    let cppClassName = interface.cppClassName;
-    let cppNamespace = interface.cppNamespace;
-    let methods = interface.methods;
-
+class DeclareInterfaceMethods<Interface interface,
+                              list<string> overridenMethods = []> {
     // This field contains a set of method names that should always have their
     // declarations generated. This allows for generating declarations for
     // methods with default implementations that need to be overridden.
     list<string> alwaysOverriddenMethods = overridenMethods;
+}
+class DeclareAttrInterfaceMethods<AttrInterface interface,
+                                  list<string> overridenMethods = []>
+      : DeclareInterfaceMethods<interface, overridenMethods>,
+        AttrInterface<interface.cppClassName> {
+    let description = interface.description;
+    let cppClassName = interface.cppClassName;
+    let cppNamespace = interface.cppNamespace;
+    let methods = interface.methods;
+}
+class DeclareOpInterfaceMethods<OpInterface interface,
+                                list<string> overridenMethods = []>
+      : DeclareInterfaceMethods<interface, overridenMethods>,
+        OpInterface<interface.cppClassName> {
+    let description = interface.description;
+    let cppClassName = interface.cppClassName;
+    let cppNamespace = interface.cppNamespace;
+    let methods = interface.methods;
+}
+class DeclareTypeInterfaceMethods<TypeInterface interface,
+                                  list<string> overridenMethods = []>
+      : DeclareInterfaceMethods<interface, overridenMethods>,
+        TypeInterface<interface.cppClassName> {
+    let description = interface.description;
+    let cppClassName = interface.cppClassName;
+    let cppNamespace = interface.cppNamespace;
+    let methods = interface.methods;
 }
 
 //===----------------------------------------------------------------------===//
@@ -2059,6 +2169,9 @@ class Op<Dialect dialect, string mnemonic, list<OpTrait> props = []> {
   // The mnemonic of the op.
   string opName = mnemonic;
 
+  // The C++ namespace to use for this op.
+  string cppNamespace = dialect.cppNamespace;
+
   // One-line human-readable description of what the op does.
   string summary = "";
 
@@ -2122,10 +2235,11 @@ class Op<Dialect dialect, string mnemonic, list<OpTrait> props = []> {
   code verifier = ?;
 
   // Whether this op has associated canonicalization patterns.
-  // TODO: figure out a better way to write canonicalization patterns in
-  // TableGen rules directly instead of using this marker and C++
-  // implementations.
   bit hasCanonicalizer = 0;
+
+  // Whether this op has a static "canonicalize" method to perform "match and
+  // rewrite patterns".
+  bit hasCanonicalizeMethod = 0;
 
   // Whether this op has a folder.
   bit hasFolder = 0;
@@ -2137,6 +2251,35 @@ class Op<Dialect dialect, string mnemonic, list<OpTrait> props = []> {
   // Additional code that will be added to the public part of the generated
   // C++ code of the op declaration.
   code extraClassDeclaration = ?;
+}
+
+// Base class for ops with static/dynamic offset, sizes and strides
+// attributes/arguments.
+class BaseOpWithOffsetSizesAndStrides<Dialect dialect, string mnemonic,
+                                      list<OpTrait> traits = []> :
+  Op<dialect, mnemonic, traits> {
+
+  // For every such op, there needs to be a:
+  //   * void print(OpAsmPrinter &p, ${C++ class of Op} op)
+  //   * LogicalResult verify(${C++ class of Op} op)
+  //   * ParseResult parse${C++ class of Op}(OpAsmParser &parser,
+  //                                         OperationState &result)
+  // functions.
+  let printer = [{ return ::print(p, *this); }];
+  let verifier = [{ return ::verify(*this); }];
+  let parser = [{ return ::parse$cppClass(parser, result); }];
+
+  code extraBaseClassDeclaration = [{
+    /// Returns the dynamic sizes for this subview operation if specified.
+    operand_range getDynamicSizes() { return sizes(); }
+
+    /// Return the list of Range (i.e. offset, size, stride). Each
+    /// Range entry contains either the dynamic value or a ConstantIndexOp
+    /// constructed with `b` at location `loc`.
+    SmallVector<Range, 8> getOrCreateRanges(OpBuilder &b, Location loc) {
+      return mlir::getOrCreateRanges(*this, b, loc);
+    }
+  }];
 }
 
 // The arguments of an op.
@@ -2234,10 +2377,7 @@ class TypesMatchWith<string summary, string lhsArg, string rhsArg,
 // ranged arguments.
 class RangedTypesMatchWith<string summary, string lhsArg, string rhsArg,
                            string transform>
-  : TypesMatchWith<summary, lhsArg, rhsArg, transform,
-    "[](auto &&lhs, auto &&rhs) { "
-    "return std::equal(lhs.begin(), lhs.end(), rhs.begin(), rhs.end());"
-    " }">;
+  : TypesMatchWith<summary, lhsArg, rhsArg, transform, "llvm::equal">;
 
 // Type Constraint operand `idx`'s Element type is `type`.
 class TCopVTEtIs<int idx, Type type> : And<[
@@ -2436,19 +2576,28 @@ class Pat<dag pattern, dag result, list<dag> preds = [],
 // the wrapped expression can take special placeholders listed below:
 //
 // * `$_builder` will be replaced by the current `mlir::PatternRewriter`.
-// * `$_self` will be replaced with the entity this transformer is attached to.
-//   E.g., with the definition `def transform : NativeCodeCall<"$_self...">`,
-//   `$_self` in `transform:$attr` will be replaced by the value for `$attr`.
+// * `$_self` will be replaced by the defining operation in a source pattern.
+//   E.g., `NativeCodeCall<"Foo($_self, &$0)> I32Attr:$attr)>`, `$_self` will be
+//   replaced with the defining operation of the first operand of OneArgOp.
 //
 // If used as a DAG node, i.e., `(NativeCodeCall<"..."> <arg0>, ..., <argN>)`,
 // then positional placeholders are also supported; placeholder `$N` in the
 // wrapped C++ expression will be replaced by `<argN>`.
+//
+// ## Bind multiple results
+//
+// To bind multi-results and access the N-th result with `$<name>__N`, specify
+// the number of return values in the template. Note that only `Value` type is
+// supported for multiple results binding.
 
-class NativeCodeCall<string expr> {
+class NativeCodeCall<string expr, int returns = 1> {
   string expression = expr;
+  int numReturns = returns;
 }
 
-def ConstantLikeMatcher : NativeCodeCall<"success(matchPattern($0->getResult(0), m_Constant(&$1)))">;
+class NativeCodeCallVoid<string expr> : NativeCodeCall<expr, 0>;
+
+def ConstantLikeMatcher : NativeCodeCall<"success(matchPattern($_self->getResult(0), m_Constant(&$0)))">;
 
 //===----------------------------------------------------------------------===//
 // Rewrite directives
@@ -2549,7 +2698,8 @@ class TypeBuilderWithInferredContext<dag parameters, code bodyCode = "">
 
 // Define a new attribute or type, named `name`, that inherits from the given
 // C++ base class.
-class AttrOrTypeDef<string valueType, string name, string baseCppClass> {
+class AttrOrTypeDef<string valueType, string name, list<Trait> defTraits,
+                    string baseCppClass> {
   // The name of the C++ base class to use for this def.
   string cppBaseClassName = baseCppClass;
 
@@ -2604,6 +2754,9 @@ class AttrOrTypeDef<string valueType, string name, string baseCppClass> {
   // Note that builders should only be provided when a def has parameters.
   list<AttrOrTypeBuilder> builders = ?;
 
+  // The list of traits attached to this def.
+  list<Trait> traits = defTraits;
+
   // Use the lowercased name as the keyword for parsing/printing. Specify only
   // if you want tblgen to generate declarations and/or definitions of
   // the printer/parser.
@@ -2632,12 +2785,26 @@ class AttrOrTypeDef<string valueType, string name, string baseCppClass> {
 
 // Define a new attribute, named `name`, belonging to `dialect` that inherits
 // from the given C++ base class.
-class AttrDef<Dialect dialect, string name,
+class AttrDef<Dialect dialect, string name, list<Trait> traits = [],
               string baseCppClass = "::mlir::Attribute">
     : DialectAttr<dialect, CPred<"">, /*descr*/"">,
-      AttrOrTypeDef<"Attr", name, baseCppClass> {
+      AttrOrTypeDef<"Attr", name, traits, baseCppClass> {
   // The name of the C++ Attribute class.
   string cppClassName = name # "Attr";
+
+  // The underlying C++ value type
+  let returnType = dialect.cppNamespace # "::" # cppClassName;
+
+  // The call expression to convert from the storage type to the return
+  // type. For example, an enum can be stored as an int but returned as an
+  // enum class.
+  //
+  // Format: $_self will be expanded to the attribute.
+  //
+  // For example, `$_self.getValue().getSExtValue()` for `IntegerAttr val` will
+  // expand to `getAttrOfType<IntegerAttr>("val").getValue().getSExtValue()`.
+  let convertFromStorage = "$_self.cast<" # dialect.cppNamespace #
+                                 "::" # cppClassName # ">()";
 
   // A code block used to build the value 'Type' of an Attribute when
   // initializing its storage instance. This field is optional, and if not
@@ -2654,10 +2821,10 @@ class AttrDef<Dialect dialect, string name,
 
 // Define a new type, named `name`, belonging to `dialect` that inherits from
 // the given C++ base class.
-class TypeDef<Dialect dialect, string name,
+class TypeDef<Dialect dialect, string name, list<Trait> traits = [],
               string baseCppClass = "::mlir::Type">
     : DialectType<dialect, CPred<"">, /*descr*/"", name # "Type">,
-      AttrOrTypeDef<"Type", name, baseCppClass> {
+      AttrOrTypeDef<"Type", name, traits, baseCppClass> {
   // A constant builder provided when the type has no parameters.
   let builderCall = !if(!empty(parameters),
                            "$_builder.getType<" # dialect.cppNamespace #
@@ -2670,23 +2837,35 @@ class TypeDef<Dialect dialect, string name,
 
 // 'Parameters' should be subclasses of this or simple strings (which is a
 // shorthand for AttrOrTypeParameter<"C++Type">).
-class AttrOrTypeParameter<string type, string desc> {
+class AttrOrTypeParameter<string type, string desc, string accessorType = ""> {
   // Custom memory allocation code for storage constructor.
   code allocator = ?;
+  // Custom comparator used to compare two instances for equality.
+  code comparator = ?;
   // The C++ type of this parameter.
   string cppType = type;
+  // The C++ type of the accessor for this parameter.
+  string cppAccessorType = !if(!empty(accessorType), type, accessorType);
   // One-line human-readable description of the argument.
   string summary = desc;
   // The format string for the asm syntax (documentation only).
   string syntax = ?;
 }
-class AttrParameter<string type, string desc> : AttrOrTypeParameter<type, desc>;
-class TypeParameter<string type, string desc> : AttrOrTypeParameter<type, desc>;
+class AttrParameter<string type, string desc, string accessorType = "">
+ : AttrOrTypeParameter<type, desc, accessorType>;
+class TypeParameter<string type, string desc, string accessorType = "">
+ : AttrOrTypeParameter<type, desc, accessorType>;
 
 // For StringRefs, which require allocation.
 class StringRefParameter<string desc = ""> :
     AttrOrTypeParameter<"::llvm::StringRef", desc> {
   let allocator = [{$_dst = $_allocator.copyInto($_self);}];
+}
+
+// For APFloats, which require comparison.
+class APFloatParameter<string desc> :
+    AttrOrTypeParameter<"::llvm::APFloat", desc> {
+  let comparator = "$_lhs.bitwiseIsEqual($_rhs)";
 }
 
 // For standard ArrayRefs, which require allocation.
@@ -2715,7 +2894,8 @@ class ArrayRefOfSelfAllocationParameter<string arrayOf, string desc> :
 // This is a special parameter used for AttrDefs that represents a `mlir::Type`
 // that is also used as the value `Type` of the attribute. Only one parameter
 // of the attribute may be of this type.
-class AttributeSelfTypeParameter<string desc> :
-    AttrOrTypeParameter<"::mlir::Type", desc> {}
+class AttributeSelfTypeParameter<string desc,
+                                 string derivedType = "::mlir::Type"> :
+    AttrOrTypeParameter<derivedType, desc> {}
 
 #endif // OP_BASE

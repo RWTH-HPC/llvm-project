@@ -212,7 +212,7 @@ PlatformRemoteGDBServer::PlatformRemoteGDBServer()
 ///
 /// The destructor is virtual since this class is designed to be
 /// inherited from by the plug-in instance.
-PlatformRemoteGDBServer::~PlatformRemoteGDBServer() {}
+PlatformRemoteGDBServer::~PlatformRemoteGDBServer() = default;
 
 bool PlatformRemoteGDBServer::GetSupportedArchitectureAtIndex(uint32_t idx,
                                                               ArchSpec &arch) {
@@ -740,8 +740,8 @@ const UnixSignalsSP &PlatformRemoteGDBServer::GetRemoteUnixSignals() {
   m_remote_signals_sp = UnixSignals::Create(GetRemoteSystemArchitecture());
 
   StringExtractorGDBRemote response;
-  auto result = m_gdb_client.SendPacketAndWaitForResponse("jSignalsInfo",
-                                                          response, false);
+  auto result =
+      m_gdb_client.SendPacketAndWaitForResponse("jSignalsInfo", response);
 
   if (result != decltype(result)::Success ||
       response.GetResponseType() != response.eResponse)
@@ -843,7 +843,7 @@ size_t PlatformRemoteGDBServer::ConnectToWaitingProcesses(Debugger &debugger,
   GetPendingGdbServerList(connection_urls);
 
   for (size_t i = 0; i < connection_urls.size(); ++i) {
-    ConnectProcess(connection_urls[i].c_str(), "", debugger, nullptr, error);
+    ConnectProcess(connection_urls[i].c_str(), "gdb-remote", debugger, nullptr, error);
     if (error.Fail())
       return i; // We already connected to i process succsessfully
   }

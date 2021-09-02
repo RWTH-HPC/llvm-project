@@ -28,6 +28,7 @@
 #include "clang/Basic/IdentifierTable.h"
 #include "clang/Basic/LLVM.h"
 #include "clang/Basic/SourceManager.h"
+#include "clang/StaticAnalyzer/Core/PathSensitive/DynamicExtent.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/SValBuilder.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/SVals.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/SymbolManager.h"
@@ -729,13 +730,6 @@ SourceRange MemRegion::sourceRange() const {
 // MemRegionManager methods.
 //===----------------------------------------------------------------------===//
 
-static DefinedOrUnknownSVal getTypeSize(QualType Ty, ASTContext &Ctx,
-                                          SValBuilder &SVB) {
-  CharUnits Size = Ctx.getTypeSizeInChars(Ty);
-  QualType SizeTy = SVB.getArrayIndexType();
-  return SVB.makeIntVal(Size.getQuantity(), SizeTy);
-}
-
 DefinedOrUnknownSVal MemRegionManager::getStaticSize(const MemRegion *MR,
                                                      SValBuilder &SVB) const {
   const auto *SR = cast<SubRegion>(MR);
@@ -766,7 +760,7 @@ DefinedOrUnknownSVal MemRegionManager::getStaticSize(const MemRegion *MR,
     if (Ty->isIncompleteType())
       return UnknownVal();
 
-    return getTypeSize(Ty, Ctx, SVB);
+    return getElementExtent(Ty, SVB);
   }
   case MemRegion::FieldRegionKind: {
     // Force callers to deal with bitfields explicitly.
@@ -774,14 +768,27 @@ DefinedOrUnknownSVal MemRegionManager::getStaticSize(const MemRegion *MR,
       return UnknownVal();
 
     QualType Ty = cast<TypedValueRegion>(SR)->getDesugaredValueType(Ctx);
-    DefinedOrUnknownSVal Size = getTypeSize(Ty, Ctx, SVB);
+    const DefinedOrUnknownSVal Size = getElementExtent(Ty, SVB);
 
     // A zero-length array at the end of a struct often stands for dynamically
     // allocated extra memory.
-    if (Size.isZeroConstant()) {
-      if (isa<ConstantArrayType>(Ty))
-        return UnknownVal();
-    }
+    const auto isFlexibleArrayMemberCandidate = [this](QualType Ty) -> bool {
+      const ArrayType *AT = Ctx.getAsArrayType(Ty);
+      if (!AT)
+        return false;
+      if (isa<IncompleteArrayType>(AT))
+        return true;
+
+      if (const auto *CAT = dyn_cast<ConstantArrayType>(AT)) {
+        const llvm::APInt &Size = CAT->getSize();
+        if (Size.isNullValue())
+          return true;
+      }
+      return false;
+    };
+
+    if (isFlexibleArrayMemberCandidate(Ty))
+      return UnknownVal();
 
     return Size;
   }

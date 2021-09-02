@@ -14,6 +14,7 @@
 #include "mlir/IR/BuiltinDialect.h"
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/Dialect.h"
+#include "mlir/IR/TensorEncoding.h"
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/BitVector.h"
 #include "llvm/ADT/Sequence.h"
@@ -29,6 +30,23 @@ using namespace mlir::detail;
 
 #define GET_TYPEDEF_CLASSES
 #include "mlir/IR/BuiltinTypes.cpp.inc"
+
+//===----------------------------------------------------------------------===//
+/// Tablegen Interface Definitions
+//===----------------------------------------------------------------------===//
+
+#include "mlir/IR/BuiltinTypeInterfaces.cpp.inc"
+
+//===----------------------------------------------------------------------===//
+// BuiltinDialect
+//===----------------------------------------------------------------------===//
+
+void BuiltinDialect::registerTypes() {
+  addTypes<
+#define GET_TYPEDEF_LIST
+#include "mlir/IR/BuiltinTypes.cpp.inc"
+      >();
+}
 
 //===----------------------------------------------------------------------===//
 /// ComplexType
@@ -154,6 +172,45 @@ inline void iterateIndicesExcept(unsigned totalIndices,
       callback(i);
 }
 
+/// Returns a new function type with the specified arguments and results
+/// inserted.
+FunctionType FunctionType::getWithArgsAndResults(
+    ArrayRef<unsigned> argIndices, TypeRange argTypes,
+    ArrayRef<unsigned> resultIndices, TypeRange resultTypes) {
+  assert(argIndices.size() == argTypes.size());
+  assert(resultIndices.size() == resultTypes.size());
+
+  ArrayRef<Type> newInputTypes = getInputs();
+  SmallVector<Type, 4> newInputTypesBuffer;
+  if (!argIndices.empty()) {
+    const auto *fromIt = newInputTypes.begin();
+    for (auto it : llvm::zip(argIndices, argTypes)) {
+      const auto *toIt = newInputTypes.begin() + std::get<0>(it);
+      newInputTypesBuffer.append(fromIt, toIt);
+      newInputTypesBuffer.push_back(std::get<1>(it));
+      fromIt = toIt;
+    }
+    newInputTypesBuffer.append(fromIt, newInputTypes.end());
+    newInputTypes = newInputTypesBuffer;
+  }
+
+  ArrayRef<Type> newResultTypes = getResults();
+  SmallVector<Type, 4> newResultTypesBuffer;
+  if (!resultIndices.empty()) {
+    const auto *fromIt = newResultTypes.begin();
+    for (auto it : llvm::zip(resultIndices, resultTypes)) {
+      const auto *toIt = newResultTypes.begin() + std::get<0>(it);
+      newResultTypesBuffer.append(fromIt, toIt);
+      newResultTypesBuffer.push_back(std::get<1>(it));
+      fromIt = toIt;
+    }
+    newResultTypesBuffer.append(fromIt, newResultTypes.end());
+    newResultTypes = newResultTypesBuffer;
+  }
+
+  return FunctionType::get(getContext(), newInputTypes, newResultTypes);
+}
+
 /// Returns a new function type without the specified arguments and results.
 FunctionType
 FunctionType::getWithoutArgsAndResults(ArrayRef<unsigned> argIndices,
@@ -181,6 +238,13 @@ FunctionType::getWithoutArgsAndResults(ArrayRef<unsigned> argIndices,
   return get(getContext(), newInputTypes, newResultTypes);
 }
 
+void FunctionType::walkImmediateSubElements(
+    function_ref<void(Attribute)> walkAttrsFn,
+    function_ref<void(Type)> walkTypesFn) const {
+  for (Type type : llvm::concat<const Type>(getInputs(), getResults()))
+    walkTypesFn(type);
+}
+
 //===----------------------------------------------------------------------===//
 // OpaqueType
 //===----------------------------------------------------------------------===//
@@ -190,6 +254,19 @@ LogicalResult OpaqueType::verify(function_ref<InFlightDiagnostic()> emitError,
                                  Identifier dialect, StringRef typeData) {
   if (!Dialect::isValidNamespace(dialect.strref()))
     return emitError() << "invalid dialect namespace '" << dialect << "'";
+
+  // Check that the dialect is actually registered.
+  MLIRContext *context = dialect.getContext();
+  if (!context->allowsUnregisteredDialects() &&
+      !context->getLoadedDialect(dialect.strref())) {
+    return emitError()
+           << "`!" << dialect << "<\"" << typeData << "\">"
+           << "` type created with unregistered dialect. If this is "
+              "intended, please call allowUnregisteredDialects() on the "
+              "MLIRContext, or use -allow-unregistered-dialect with "
+              "the MLIR opt tool used";
+  }
+
   return success();
 }
 
@@ -368,7 +445,7 @@ LogicalResult VectorType::verify(function_ref<InFlightDiagnostic()> emitError,
     return emitError() << "vector types must have at least one dimension";
 
   if (!isValidElementType(elementType))
-    return emitError() << "vector elements must be int or float type";
+    return emitError() << "vector elements must be int/index/float type";
 
   if (any_of(shape, [](int64_t i) { return i <= 0; }))
     return emitError() << "vector types must have positive constant sizes";
@@ -386,6 +463,12 @@ VectorType VectorType::scaleElementBitwidth(unsigned scale) {
     if (auto scaledEt = et.scaleElementBitwidth(scale))
       return VectorType::get(getShape(), scaledEt);
   return VectorType();
+}
+
+void VectorType::walkImmediateSubElements(
+    function_ref<void(Attribute)> walkAttrsFn,
+    function_ref<void(Type)> walkTypesFn) const {
+  walkTypesFn(getElementType());
 }
 
 //===----------------------------------------------------------------------===//
@@ -408,7 +491,7 @@ bool TensorType::isValidElementType(Type type) {
   // element type within that dialect.
   return type.isa<ComplexType, FloatType, IntegerType, OpaqueType, VectorType,
                   IndexType>() ||
-         !type.getDialect().getNamespace().empty();
+         !llvm::isa<BuiltinDialect>(type.getDialect());
 }
 
 //===----------------------------------------------------------------------===//
@@ -417,11 +500,23 @@ bool TensorType::isValidElementType(Type type) {
 
 LogicalResult
 RankedTensorType::verify(function_ref<InFlightDiagnostic()> emitError,
-                         ArrayRef<int64_t> shape, Type elementType) {
+                         ArrayRef<int64_t> shape, Type elementType,
+                         Attribute encoding) {
   for (int64_t s : shape)
     if (s < -1)
       return emitError() << "invalid tensor dimension size";
+  if (auto v = encoding.dyn_cast_or_null<VerifiableTensorEncoding>())
+    if (failed(v.verifyEncoding(shape, elementType, emitError)))
+      return failure();
   return checkTensorElementType(emitError, elementType);
+}
+
+void RankedTensorType::walkImmediateSubElements(
+    function_ref<void(Attribute)> walkAttrsFn,
+    function_ref<void(Type)> walkTypesFn) const {
+  walkTypesFn(getElementType());
+  if (Attribute encoding = getEncoding())
+    walkAttrsFn(encoding);
 }
 
 //===----------------------------------------------------------------------===//
@@ -432,6 +527,12 @@ LogicalResult
 UnrankedTensorType::verify(function_ref<InFlightDiagnostic()> emitError,
                            Type elementType) {
   return checkTensorElementType(emitError, elementType);
+}
+
+void UnrankedTensorType::walkImmediateSubElements(
+    function_ref<void(Attribute)> walkAttrsFn,
+    function_ref<void(Type)> walkTypesFn) const {
+  walkTypesFn(getElementType());
 }
 
 //===----------------------------------------------------------------------===//
@@ -453,6 +554,40 @@ unsigned BaseMemRefType::getMemorySpaceAsInt() const {
 //===----------------------------------------------------------------------===//
 // MemRefType
 //===----------------------------------------------------------------------===//
+
+/// Given an `originalShape` and a `reducedShape` assumed to be a subset of
+/// `originalShape` with some `1` entries erased, return the set of indices
+/// that specifies which of the entries of `originalShape` are dropped to obtain
+/// `reducedShape`. The returned mask can be applied as a projection to
+/// `originalShape` to obtain the `reducedShape`. This mask is useful to track
+/// which dimensions must be kept when e.g. compute MemRef strides under
+/// rank-reducing operations. Return None if reducedShape cannot be obtained
+/// by dropping only `1` entries in `originalShape`.
+llvm::Optional<llvm::SmallDenseSet<unsigned>>
+mlir::computeRankReductionMask(ArrayRef<int64_t> originalShape,
+                               ArrayRef<int64_t> reducedShape) {
+  size_t originalRank = originalShape.size(), reducedRank = reducedShape.size();
+  llvm::SmallDenseSet<unsigned> unusedDims;
+  unsigned reducedIdx = 0;
+  for (unsigned originalIdx = 0; originalIdx < originalRank; ++originalIdx) {
+    // Greedily insert `originalIdx` if no match.
+    if (reducedIdx < reducedRank &&
+        originalShape[originalIdx] == reducedShape[reducedIdx]) {
+      reducedIdx++;
+      continue;
+    }
+
+    unusedDims.insert(originalIdx);
+    // If no match on `originalIdx`, the `originalShape` at this dimension
+    // must be 1, otherwise we bail.
+    if (originalShape[originalIdx] != 1)
+      return llvm::None;
+  }
+  // The whole reducedShape must be scanned, otherwise we bail.
+  if (reducedIdx != reducedRank)
+    return llvm::None;
+  return unusedDims;
+}
 
 bool mlir::detail::isSupportedMemorySpace(Attribute memorySpace) {
   // Empty attribute is allowed as default memory space.
@@ -514,7 +649,7 @@ LogicalResult MemRefType::verify(function_ref<InFlightDiagnostic()> emitError,
   if (!BaseMemRefType::isValidElementType(elementType))
     return emitError() << "invalid memref element type";
 
-    // Negative sizes are not allowed except for `-1` that means dynamic size.
+  // Negative sizes are not allowed except for `-1` that means dynamic size.
   for (int64_t s : shape)
     if (s < -1)
       return emitError() << "invalid memref size";
@@ -541,6 +676,15 @@ LogicalResult MemRefType::verify(function_ref<InFlightDiagnostic()> emitError,
   }
 
   return success();
+}
+
+void MemRefType::walkImmediateSubElements(
+    function_ref<void(Attribute)> walkAttrsFn,
+    function_ref<void(Type)> walkTypesFn) const {
+  walkTypesFn(getElementType());
+  walkAttrsFn(getMemorySpace());
+  for (AffineMap map : getAffineMaps())
+    walkAttrsFn(AffineMapAttr::get(map));
 }
 
 //===----------------------------------------------------------------------===//
@@ -628,25 +772,22 @@ LogicalResult mlir::getStridesAndOffset(MemRefType t,
                                         SmallVectorImpl<AffineExpr> &strides,
                                         AffineExpr &offset) {
   auto affineMaps = t.getAffineMaps();
-  // For now strides are only computed on a single affine map with a single
-  // result (i.e. the closed subset of linearization maps that are compatible
-  // with striding semantics).
-  // TODO: support more forms on a per-need basis.
-  if (affineMaps.size() > 1)
+
+  if (!affineMaps.empty() && affineMaps.back().getNumResults() != 1)
     return failure();
-  if (affineMaps.size() == 1 && affineMaps[0].getNumResults() != 1)
-    return failure();
+
+  AffineMap m;
+  if (!affineMaps.empty()) {
+    m = affineMaps.back();
+    for (size_t i = affineMaps.size() - 1; i > 0; --i)
+      m = m.compose(affineMaps[i - 1]);
+    assert(!m.isIdentity() && "unexpected identity map");
+  }
 
   auto zero = getAffineConstantExpr(0, t.getContext());
   auto one = getAffineConstantExpr(1, t.getContext());
   offset = zero;
   strides.assign(t.getRank(), zero);
-
-  AffineMap m;
-  if (!affineMaps.empty()) {
-    m = affineMaps.front();
-    assert(!m.isIdentity() && "unexpected identity map");
-  }
 
   // Canonical case for empty map.
   if (!m) {
@@ -713,6 +854,13 @@ LogicalResult mlir::getStridesAndOffset(MemRefType t,
   return success();
 }
 
+void UnrankedMemRefType::walkImmediateSubElements(
+    function_ref<void(Attribute)> walkAttrsFn,
+    function_ref<void(Type)> walkTypesFn) const {
+  walkTypesFn(getElementType());
+  walkAttrsFn(getMemorySpace());
+}
+
 //===----------------------------------------------------------------------===//
 /// TupleType
 //===----------------------------------------------------------------------===//
@@ -735,6 +883,13 @@ void TupleType::getFlattenedTypes(SmallVectorImpl<Type> &types) {
 
 /// Return the number of element types.
 size_t TupleType::size() const { return getImpl()->size(); }
+
+void TupleType::walkImmediateSubElements(
+    function_ref<void(Attribute)> walkAttrsFn,
+    function_ref<void(Type)> walkTypesFn) const {
+  for (Type type : getTypes())
+    walkTypesFn(type);
+}
 
 //===----------------------------------------------------------------------===//
 // Type Utilities

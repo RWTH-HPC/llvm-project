@@ -325,6 +325,9 @@ public:
   QualType FnRetTy;
   llvm::Function *CurFn = nullptr;
 
+  /// Save Parameter Decl for coroutine.
+  llvm::SmallVector<const ParmVarDecl *, 4> FnArgs;
+
   // Holds coroutine data if the current function is a coroutine. We use a
   // wrapper to manage its lifetime, so that we don't have to define CGCoroData
   // in this header.
@@ -517,21 +520,32 @@ public:
   /// True if the current statement has nomerge attribute.
   bool InNoMergeAttributedStmt = false;
 
-  /// True if the current function should be marked mustprogress.
-  bool FnIsMustProgress = false;
+  // The CallExpr within the current statement that the musttail attribute
+  // applies to.  nullptr if there is no 'musttail' on the current statement.
+  const CallExpr *MustTailCall = nullptr;
 
-  /// True if the C++ Standard Requires Progress.
-  bool CPlusPlusWithProgress() {
+  /// Returns true if a function must make progress, which means the
+  /// mustprogress attribute can be added.
+  bool checkIfFunctionMustProgress() {
     if (CGM.getCodeGenOpts().getFiniteLoops() ==
         CodeGenOptions::FiniteLoopsKind::Never)
       return false;
 
-    return getLangOpts().CPlusPlus11 || getLangOpts().CPlusPlus14 ||
-           getLangOpts().CPlusPlus17 || getLangOpts().CPlusPlus20;
+    // C++11 and later guarantees that a thread eventually will do one of the
+    // following (6.9.2.3.1 in C++11):
+    // - terminate,
+    //  - make a call to a library I/O function,
+    //  - perform an access through a volatile glvalue, or
+    //  - perform a synchronization operation or an atomic operation.
+    //
+    // Hence each function is 'mustprogress' in C++11 or later.
+    return getLangOpts().CPlusPlus11;
   }
 
-  /// True if the C Standard Requires Progress.
-  bool CWithProgress() {
+  /// Returns true if a loop must make progress, which means the mustprogress
+  /// attribute can be added. \p HasConstantCond indicates whether the branch
+  /// condition is a known constant.
+  bool checkIfLoopMustProgress(bool HasConstantCond) {
     if (CGM.getCodeGenOpts().getFiniteLoops() ==
         CodeGenOptions::FiniteLoopsKind::Always)
       return true;
@@ -539,13 +553,19 @@ public:
         CodeGenOptions::FiniteLoopsKind::Never)
       return false;
 
-    return getLangOpts().C11 || getLangOpts().C17 || getLangOpts().C2x;
-  }
+    // If the containing function must make progress, loops also must make
+    // progress (as in C++11 and later).
+    if (checkIfFunctionMustProgress())
+      return true;
 
-  /// True if the language standard requires progress in functions or
-  /// in infinite loops with non-constant conditionals.
-  bool LanguageRequiresProgress() {
-    return CWithProgress() || CPlusPlusWithProgress();
+    // Now apply rules for plain C (see  6.8.5.6 in C11).
+    // Loops with constant conditions do not have to make progress in any C
+    // version.
+    if (HasConstantCond)
+      return false;
+
+    // Loops with non-constant conditions must make progress in C11 and later.
+    return getLangOpts().C11;
   }
 
   const CodeGen::CGBlockInfo *BlockInfo = nullptr;
@@ -565,6 +585,8 @@ public:
   llvm::Instruction *CurrentFuncletPad = nullptr;
 
   class CallLifetimeEnd final : public EHScopeStack::Cleanup {
+    bool isRedundantBeforeReturn() override { return true; }
+
     llvm::Value *Addr;
     llvm::Value *Size;
 
@@ -1445,8 +1467,9 @@ private:
   };
   OpenMPCancelExitStack OMPCancelStack;
 
-  /// Calculate branch weights for the likelihood attribute
-  llvm::MDNode *createBranchWeights(Stmt::Likelihood LH) const;
+  /// Lower the Likelihood knowledge about the \p Cond via llvm.expect intrin.
+  llvm::Value *emitCondLikelihoodViaExpectIntrinsic(llvm::Value *Cond,
+                                                    Stmt::Likelihood LH);
 
   CodeGenPGO PGO;
 
@@ -1456,13 +1479,6 @@ private:
   llvm::MDNode *createProfileWeights(ArrayRef<uint64_t> Weights) const;
   llvm::MDNode *createProfileWeightsForLoop(const Stmt *Cond,
                                             uint64_t LoopCount) const;
-
-  /// Calculate the branch weight for PGO data or the likelihood attribute.
-  /// The function tries to get the weight of \ref createProfileWeightsForLoop.
-  /// If that fails it gets the weight of \ref createBranchWeights.
-  llvm::MDNode *createProfileOrBranchWeightsForLoop(const Stmt *Cond,
-                                                    uint64_t LoopCount,
-                                                    const Stmt *Body) const;
 
 public:
   /// Increment the profiler's counter for the given statement by \p StepV.
@@ -1892,8 +1908,9 @@ private:
   /// function attribute.
   unsigned LargestVectorWidth = 0;
 
-  /// True if we need emit the life-time markers.
-  const bool ShouldEmitLifetimeMarkers;
+  /// True if we need emit the life-time markers. This is initially set in
+  /// the constructor, but could be overwritten to true if this is a coroutine.
+  bool ShouldEmitLifetimeMarkers;
 
   /// Add OpenCL kernel arg metadata and the kernel attribute metadata to
   /// the function metadata.
@@ -2268,6 +2285,10 @@ public:
   /// ShouldInstrumentFunction - Return true if the current function should be
   /// instrumented with __cyg_profile_func_* calls
   bool ShouldInstrumentFunction();
+
+  /// ShouldSkipSanitizerInstrumentation - Return true if the current function
+  /// should not be instrumented with sanitizers.
+  bool ShouldSkipSanitizerInstrumentation();
 
   /// ShouldXRayInstrument - Return true if the current function should be
   /// instrumented with XRay nop sleds.
@@ -2850,7 +2871,12 @@ public:
   void EmitCXXTemporary(const CXXTemporary *Temporary, QualType TempType,
                         Address Ptr);
 
-  llvm::Value *EmitLifetimeStart(uint64_t Size, llvm::Value *Addr);
+  void EmitSehCppScopeBegin();
+  void EmitSehCppScopeEnd();
+  void EmitSehTryScopeBegin();
+  void EmitSehTryScopeEnd();
+
+  llvm::Value *EmitLifetimeStart(llvm::TypeSize Size, llvm::Value *Addr);
   void EmitLifetimeEnd(llvm::Value *Size, llvm::Value *Addr);
 
   llvm::Value *EmitCXXNewExpr(const CXXNewExpr *E);
@@ -3200,6 +3226,8 @@ public:
   void EmitSEHLeaveStmt(const SEHLeaveStmt &S);
   void EnterSEHTryStmt(const SEHTryStmt &S);
   void ExitSEHTryStmt(const SEHTryStmt &S);
+  void VolatilizeTryBlocks(llvm::BasicBlock *BB,
+                           llvm::SmallPtrSet<llvm::BasicBlock *, 10> &V);
 
   void pushSEHCleanup(CleanupKind kind,
                       llvm::Function *FinallyFunc);
@@ -3417,12 +3445,14 @@ public:
   void EmitOMPParallelDirective(const OMPParallelDirective &S);
   void EmitOMPSimdDirective(const OMPSimdDirective &S);
   void EmitOMPTileDirective(const OMPTileDirective &S);
+  void EmitOMPUnrollDirective(const OMPUnrollDirective &S);
   void EmitOMPForDirective(const OMPForDirective &S);
   void EmitOMPForSimdDirective(const OMPForSimdDirective &S);
   void EmitOMPSectionsDirective(const OMPSectionsDirective &S);
   void EmitOMPSectionDirective(const OMPSectionDirective &S);
   void EmitOMPSingleDirective(const OMPSingleDirective &S);
   void EmitOMPMasterDirective(const OMPMasterDirective &S);
+  void EmitOMPMaskedDirective(const OMPMaskedDirective &S);
   void EmitOMPCriticalDirective(const OMPCriticalDirective &S);
   void EmitOMPParallelForDirective(const OMPParallelForDirective &S);
   void EmitOMPParallelForSimdDirective(const OMPParallelForSimdDirective &S);
@@ -3574,7 +3604,7 @@ public:
                              const CodeGenLoopTy &CodeGenLoop, Expr *IncExpr);
 
   /// Helpers for the OpenMP loop directives.
-  void EmitOMPSimdInit(const OMPLoopDirective &D, bool IsMonotonic = false);
+  void EmitOMPSimdInit(const OMPLoopDirective &D);
   void EmitOMPSimdFinal(
       const OMPLoopDirective &D,
       const llvm::function_ref<llvm::Value *(CodeGenFunction &)> CondGen);
@@ -3914,12 +3944,14 @@ public:
   /// LLVM arguments and the types they were derived from.
   RValue EmitCall(const CGFunctionInfo &CallInfo, const CGCallee &Callee,
                   ReturnValueSlot ReturnValue, const CallArgList &Args,
-                  llvm::CallBase **callOrInvoke, SourceLocation Loc);
+                  llvm::CallBase **callOrInvoke, bool IsMustTail,
+                  SourceLocation Loc);
   RValue EmitCall(const CGFunctionInfo &CallInfo, const CGCallee &Callee,
                   ReturnValueSlot ReturnValue, const CallArgList &Args,
-                  llvm::CallBase **callOrInvoke = nullptr) {
+                  llvm::CallBase **callOrInvoke = nullptr,
+                  bool IsMustTail = false) {
     return EmitCall(CallInfo, Callee, ReturnValue, Args, callOrInvoke,
-                    SourceLocation());
+                    IsMustTail, SourceLocation());
   }
   RValue EmitCall(QualType FnType, const CGCallee &Callee, const CallExpr *E,
                   ReturnValueSlot ReturnValue, llvm::Value *Chain = nullptr);
@@ -4098,30 +4130,30 @@ public:
   /// SVEBuiltinMemEltTy - Returns the memory element type for this memory
   /// access builtin.  Only required if it can't be inferred from the base
   /// pointer operand.
-  llvm::Type *SVEBuiltinMemEltTy(SVETypeFlags TypeFlags);
+  llvm::Type *SVEBuiltinMemEltTy(const SVETypeFlags &TypeFlags);
 
-  SmallVector<llvm::Type *, 2> getSVEOverloadTypes(SVETypeFlags TypeFlags,
-                                                   llvm::Type *ReturnType,
-                                                   ArrayRef<llvm::Value *> Ops);
-  llvm::Type *getEltType(SVETypeFlags TypeFlags);
+  SmallVector<llvm::Type *, 2>
+  getSVEOverloadTypes(const SVETypeFlags &TypeFlags, llvm::Type *ReturnType,
+                      ArrayRef<llvm::Value *> Ops);
+  llvm::Type *getEltType(const SVETypeFlags &TypeFlags);
   llvm::ScalableVectorType *getSVEType(const SVETypeFlags &TypeFlags);
-  llvm::ScalableVectorType *getSVEPredType(SVETypeFlags TypeFlags);
-  llvm::Value *EmitSVEAllTruePred(SVETypeFlags TypeFlags);
+  llvm::ScalableVectorType *getSVEPredType(const SVETypeFlags &TypeFlags);
+  llvm::Value *EmitSVEAllTruePred(const SVETypeFlags &TypeFlags);
   llvm::Value *EmitSVEDupX(llvm::Value *Scalar);
   llvm::Value *EmitSVEDupX(llvm::Value *Scalar, llvm::Type *Ty);
   llvm::Value *EmitSVEReinterpret(llvm::Value *Val, llvm::Type *Ty);
-  llvm::Value *EmitSVEPMull(SVETypeFlags TypeFlags,
+  llvm::Value *EmitSVEPMull(const SVETypeFlags &TypeFlags,
                             llvm::SmallVectorImpl<llvm::Value *> &Ops,
                             unsigned BuiltinID);
-  llvm::Value *EmitSVEMovl(SVETypeFlags TypeFlags,
+  llvm::Value *EmitSVEMovl(const SVETypeFlags &TypeFlags,
                            llvm::ArrayRef<llvm::Value *> Ops,
                            unsigned BuiltinID);
   llvm::Value *EmitSVEPredicateCast(llvm::Value *Pred,
                                     llvm::ScalableVectorType *VTy);
-  llvm::Value *EmitSVEGatherLoad(SVETypeFlags TypeFlags,
+  llvm::Value *EmitSVEGatherLoad(const SVETypeFlags &TypeFlags,
                                  llvm::SmallVectorImpl<llvm::Value *> &Ops,
                                  unsigned IntID);
-  llvm::Value *EmitSVEScatterStore(SVETypeFlags TypeFlags,
+  llvm::Value *EmitSVEScatterStore(const SVETypeFlags &TypeFlags,
                                    llvm::SmallVectorImpl<llvm::Value *> &Ops,
                                    unsigned IntID);
   llvm::Value *EmitSVEMaskedLoad(const CallExpr *, llvm::Type *ReturnTy,
@@ -4130,15 +4162,16 @@ public:
   llvm::Value *EmitSVEMaskedStore(const CallExpr *,
                                   SmallVectorImpl<llvm::Value *> &Ops,
                                   unsigned BuiltinID);
-  llvm::Value *EmitSVEPrefetchLoad(SVETypeFlags TypeFlags,
+  llvm::Value *EmitSVEPrefetchLoad(const SVETypeFlags &TypeFlags,
                                    SmallVectorImpl<llvm::Value *> &Ops,
                                    unsigned BuiltinID);
-  llvm::Value *EmitSVEGatherPrefetch(SVETypeFlags TypeFlags,
+  llvm::Value *EmitSVEGatherPrefetch(const SVETypeFlags &TypeFlags,
                                      SmallVectorImpl<llvm::Value *> &Ops,
                                      unsigned IntID);
-  llvm::Value *EmitSVEStructLoad(SVETypeFlags TypeFlags,
-                                 SmallVectorImpl<llvm::Value *> &Ops, unsigned IntID);
-  llvm::Value *EmitSVEStructStore(SVETypeFlags TypeFlags,
+  llvm::Value *EmitSVEStructLoad(const SVETypeFlags &TypeFlags,
+                                 SmallVectorImpl<llvm::Value *> &Ops,
+                                 unsigned IntID);
+  llvm::Value *EmitSVEStructStore(const SVETypeFlags &TypeFlags,
                                   SmallVectorImpl<llvm::Value *> &Ops,
                                   unsigned IntID);
   llvm::Value *EmitAArch64SVEBuiltinExpr(unsigned BuiltinID, const CallExpr *E);
@@ -4336,6 +4369,11 @@ public:
   llvm::Function *createAtExitStub(const VarDecl &VD, llvm::FunctionCallee Dtor,
                                    llvm::Constant *Addr);
 
+  llvm::Function *createTLSAtExitStub(const VarDecl &VD,
+                                      llvm::FunctionCallee Dtor,
+                                      llvm::Constant *Addr,
+                                      llvm::FunctionCallee &AtExit);
+
   /// Call atexit() with a function that passes the given argument to
   /// the given function.
   void registerGlobalDtorWithAtExit(const VarDecl &D, llvm::FunctionCallee fn,
@@ -4374,8 +4412,9 @@ public:
   /// variables.
   void GenerateCXXGlobalCleanUpFunc(
       llvm::Function *Fn,
-      const std::vector<std::tuple<llvm::FunctionType *, llvm::WeakTrackingVH,
-                                   llvm::Constant *>> &DtorsOrStermFinalizers);
+      ArrayRef<std::tuple<llvm::FunctionType *, llvm::WeakTrackingVH,
+                          llvm::Constant *>>
+          DtorsOrStermFinalizers);
 
   void GenerateCXXGlobalVarDeclInitFunc(llvm::Function *Fn,
                                         const VarDecl *D,
@@ -4554,9 +4593,6 @@ public:
   /// point operation, expressed as the maximum relative error in ulp.
   void SetFPAccuracy(llvm::Value *Val, float Accuracy);
 
-  /// SetFPModel - Control floating point behavior via fp-model settings.
-  void SetFPModel();
-
   /// Set the codegen fast-math flags.
   void SetFastMathFlags(FPOptions FPFeatures);
 
@@ -4673,7 +4709,6 @@ public:
 
   struct MultiVersionResolverOption {
     llvm::Function *Function;
-    FunctionDecl *FD;
     struct Conds {
       StringRef Architecture;
       llvm::SmallVector<StringRef, 8> Features;
@@ -4692,8 +4727,6 @@ public:
   // last (if it exists).
   void EmitMultiVersionResolver(llvm::Function *Resolver,
                                 ArrayRef<MultiVersionResolverOption> Options);
-
-  static uint64_t GetX86CpuSupportsMask(ArrayRef<StringRef> FeatureStrs);
 
 private:
   QualType getVarArgType(const Expr *Arg);
@@ -4807,7 +4840,8 @@ inline llvm::Value *DominatingLLVMValue::restore(CodeGenFunction &CGF,
 
   // Otherwise, it should be an alloca instruction, as set up in save().
   auto alloca = cast<llvm::AllocaInst>(value.getPointer());
-  return CGF.Builder.CreateAlignedLoad(alloca, alloca->getAlign());
+  return CGF.Builder.CreateAlignedLoad(alloca->getAllocatedType(), alloca,
+                                       alloca->getAlign());
 }
 
 }  // end namespace CodeGen

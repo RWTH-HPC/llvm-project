@@ -17,7 +17,7 @@ int printf(const char *, ...);
 // CHECK-NEXT:    store i32 [[X:%.*]], i32* [[X_ADDR]], align 4
 // CHECK-NEXT:    [[TMP0:%.*]] = load i8*, i8** [[STR_ADDR]], align 8
 // CHECK-NEXT:    [[TMP1:%.*]] = load i32, i32* [[X_ADDR]], align 4
-// CHECK-NEXT:    [[CALL:%.*]] = call i32 (i8*, ...) @printf(i8* getelementptr inbounds ([8 x i8], [8 x i8]* @.str, i64 0, i64 0), i8* [[TMP0]], i32 [[TMP1]]) [[ATTR4:#.*]]
+// CHECK-NEXT:    [[CALL:%.*]] = call i32 (i8*, ...) @printf(i8* getelementptr inbounds ([8 x i8], [8 x i8]* @.str, i64 0, i64 0), i8* [[TMP0]], i32 [[TMP1]]) #[[ATTR5:[0-9]+]]
 // CHECK-NEXT:    ret void
 //
 void p(char *str, int x) {
@@ -31,21 +31,21 @@ void p(char *str, int x) {
 // CHECK-NEXT:    [[D_ADDR:%.*]] = alloca double, align 8
 // CHECK-NEXT:    store double [[D:%.*]], double* [[D_ADDR]], align 8
 // CHECK-NEXT:    [[TMP0:%.*]] = load double, double* [[D_ADDR]], align 8
-// CHECK-NEXT:    [[ISZERO:%.*]] = call i1 @llvm.experimental.constrained.fcmp.f64(double [[TMP0]], double 0.000000e+00, metadata !"oeq", metadata !"fpexcept.strict") [[ATTR4]]
+// CHECK-NEXT:    [[ISZERO:%.*]] = call i1 @llvm.experimental.constrained.fcmp.f64(double [[TMP0]], double 0.000000e+00, metadata !"oeq", metadata !"fpexcept.strict") #[[ATTR5]]
 // CHECK-NEXT:    br i1 [[ISZERO]], label [[FPCLASSIFY_END:%.*]], label [[FPCLASSIFY_NOT_ZERO:%.*]]
 // CHECK:       fpclassify_end:
 // CHECK-NEXT:    [[FPCLASSIFY_RESULT:%.*]] = phi i32 [ 4, [[ENTRY:%.*]] ], [ 0, [[FPCLASSIFY_NOT_ZERO]] ], [ 1, [[FPCLASSIFY_NOT_NAN:%.*]] ], [ [[TMP2:%.*]], [[FPCLASSIFY_NOT_INF:%.*]] ]
-// CHECK-NEXT:    call void @p(i8* getelementptr inbounds ([29 x i8], [29 x i8]* @.str.1, i64 0, i64 0), i32 [[FPCLASSIFY_RESULT]]) [[ATTR4]]
+// CHECK-NEXT:    call void @p(i8* getelementptr inbounds ([29 x i8], [29 x i8]* @.str.1, i64 0, i64 0), i32 [[FPCLASSIFY_RESULT]]) #[[ATTR5]]
 // CHECK-NEXT:    ret void
 // CHECK:       fpclassify_not_zero:
-// CHECK-NEXT:    [[CMP:%.*]] = call i1 @llvm.experimental.constrained.fcmp.f64(double [[TMP0]], double [[TMP0]], metadata !"uno", metadata !"fpexcept.strict") [[ATTR4]]
+// CHECK-NEXT:    [[CMP:%.*]] = call i1 @llvm.experimental.constrained.fcmp.f64(double [[TMP0]], double [[TMP0]], metadata !"uno", metadata !"fpexcept.strict") #[[ATTR5]]
 // CHECK-NEXT:    br i1 [[CMP]], label [[FPCLASSIFY_END]], label [[FPCLASSIFY_NOT_NAN]]
 // CHECK:       fpclassify_not_nan:
-// CHECK-NEXT:    [[TMP1:%.*]] = call double @llvm.fabs.f64(double [[TMP0]]) [[ATTR5:#.*]]
-// CHECK-NEXT:    [[ISINF:%.*]] = call i1 @llvm.experimental.constrained.fcmp.f64(double [[TMP1]], double 0x7FF0000000000000, metadata !"oeq", metadata !"fpexcept.strict") [[ATTR4]]
+// CHECK-NEXT:    [[TMP1:%.*]] = call double @llvm.fabs.f64(double [[TMP0]]) #[[ATTR6:[0-9]+]]
+// CHECK-NEXT:    [[ISINF:%.*]] = call i1 @llvm.experimental.constrained.fcmp.f64(double [[TMP1]], double 0x7FF0000000000000, metadata !"oeq", metadata !"fpexcept.strict") #[[ATTR5]]
 // CHECK-NEXT:    br i1 [[ISINF]], label [[FPCLASSIFY_END]], label [[FPCLASSIFY_NOT_INF]]
 // CHECK:       fpclassify_not_inf:
-// CHECK-NEXT:    [[ISNORMAL:%.*]] = call i1 @llvm.experimental.constrained.fcmp.f64(double [[TMP1]], double 0x10000000000000, metadata !"uge", metadata !"fpexcept.strict") [[ATTR4]]
+// CHECK-NEXT:    [[ISNORMAL:%.*]] = call i1 @llvm.experimental.constrained.fcmp.f64(double [[TMP1]], double 0x10000000000000, metadata !"uge", metadata !"fpexcept.strict") #[[ATTR5]]
 // CHECK-NEXT:    [[TMP2]] = select i1 [[ISNORMAL]], i32 2, i32 3
 // CHECK-NEXT:    br label [[FPCLASSIFY_END]]
 //
@@ -55,19 +55,110 @@ void test_fpclassify(double d) {
   return;
 }
 
-// CHECK-LABEL: @test_isinf(
+// CHECK-LABEL: @test_fp16_isinf(
+// CHECK-NEXT:  entry:
+// CHECK-NEXT:    [[H_ADDR:%.*]] = alloca half, align 2
+// CHECK-NEXT:    store half [[H:%.*]], half* [[H_ADDR]], align 2
+// CHECK-NEXT:    [[TMP0:%.*]] = load half, half* [[H_ADDR]], align 2
+// CHECK-NEXT:    [[TMP1:%.*]] = bitcast half [[TMP0]] to i16
+// CHECK-NEXT:    [[TMP2:%.*]] = shl i16 [[TMP1]], 1
+// CHECK-NEXT:    [[TMP3:%.*]] = icmp eq i16 [[TMP2]], -2048
+// CHECK-NEXT:    [[TMP4:%.*]] = zext i1 [[TMP3]] to i32
+// CHECK-NEXT:    call void @p(i8* getelementptr inbounds ([9 x i8], [9 x i8]* @.str.2, i64 0, i64 0), i32 [[TMP4]]) #[[ATTR5]]
+// CHECK-NEXT:    ret void
+//
+void test_fp16_isinf(__fp16 h) {
+  P(isinf, (h));
+
+  return;
+}
+
+// CHECK-LABEL: @test_float_isinf(
+// CHECK-NEXT:  entry:
+// CHECK-NEXT:    [[F_ADDR:%.*]] = alloca float, align 4
+// CHECK-NEXT:    store float [[F:%.*]], float* [[F_ADDR]], align 4
+// CHECK-NEXT:    [[TMP0:%.*]] = load float, float* [[F_ADDR]], align 4
+// CHECK-NEXT:    [[TMP1:%.*]] = bitcast float [[TMP0]] to i32
+// CHECK-NEXT:    [[TMP2:%.*]] = shl i32 [[TMP1]], 1
+// CHECK-NEXT:    [[TMP3:%.*]] = icmp eq i32 [[TMP2]], -16777216
+// CHECK-NEXT:    [[TMP4:%.*]] = zext i1 [[TMP3]] to i32
+// CHECK-NEXT:    call void @p(i8* getelementptr inbounds ([9 x i8], [9 x i8]* @.str.3, i64 0, i64 0), i32 [[TMP4]]) #[[ATTR5]]
+// CHECK-NEXT:    ret void
+//
+void test_float_isinf(float f) {
+  P(isinf, (f));
+
+  return;
+}
+
+// CHECK-LABEL: @test_double_isinf(
 // CHECK-NEXT:  entry:
 // CHECK-NEXT:    [[D_ADDR:%.*]] = alloca double, align 8
 // CHECK-NEXT:    store double [[D:%.*]], double* [[D_ADDR]], align 8
 // CHECK-NEXT:    [[TMP0:%.*]] = load double, double* [[D_ADDR]], align 8
-// CHECK-NEXT:    [[TMP1:%.*]] = call double @llvm.fabs.f64(double [[TMP0]]) [[ATTR5]]
-// CHECK-NEXT:    [[CMPINF:%.*]] = call i1 @llvm.experimental.constrained.fcmp.f64(double [[TMP1]], double 0x7FF0000000000000, metadata !"oeq", metadata !"fpexcept.strict") [[ATTR4]]
-// CHECK-NEXT:    [[TMP2:%.*]] = zext i1 [[CMPINF]] to i32
-// CHECK-NEXT:    call void @p(i8* getelementptr inbounds ([9 x i8], [9 x i8]* @.str.2, i64 0, i64 0), i32 [[TMP2]]) [[ATTR4]]
+// CHECK-NEXT:    [[TMP1:%.*]] = bitcast double [[TMP0]] to i64
+// CHECK-NEXT:    [[TMP2:%.*]] = shl i64 [[TMP1]], 1
+// CHECK-NEXT:    [[TMP3:%.*]] = icmp eq i64 [[TMP2]], -9007199254740992
+// CHECK-NEXT:    [[TMP4:%.*]] = zext i1 [[TMP3]] to i32
+// CHECK-NEXT:    call void @p(i8* getelementptr inbounds ([9 x i8], [9 x i8]* @.str.4, i64 0, i64 0), i32 [[TMP4]]) #[[ATTR5]]
 // CHECK-NEXT:    ret void
 //
-void test_isinf(double d) {
+void test_double_isinf(double d) {
   P(isinf, (d));
+
+  return;
+}
+
+// CHECK-LABEL: @test_fp16_isfinite(
+// CHECK-NEXT:  entry:
+// CHECK-NEXT:    [[H_ADDR:%.*]] = alloca half, align 2
+// CHECK-NEXT:    store half [[H:%.*]], half* [[H_ADDR]], align 2
+// CHECK-NEXT:    [[TMP0:%.*]] = load half, half* [[H_ADDR]], align 2
+// CHECK-NEXT:    [[TMP1:%.*]] = bitcast half [[TMP0]] to i16
+// CHECK-NEXT:    [[TMP2:%.*]] = shl i16 [[TMP1]], 1
+// CHECK-NEXT:    [[TMP3:%.*]] = icmp ult i16 [[TMP2]], -2048
+// CHECK-NEXT:    [[TMP4:%.*]] = zext i1 [[TMP3]] to i32
+// CHECK-NEXT:    call void @p(i8* getelementptr inbounds ([12 x i8], [12 x i8]* @.str.5, i64 0, i64 0), i32 [[TMP4]]) #[[ATTR5]]
+// CHECK-NEXT:    ret void
+//
+void test_fp16_isfinite(__fp16 h) {
+  P(isfinite, (h));
+
+  return;
+}
+
+// CHECK-LABEL: @test_float_isfinite(
+// CHECK-NEXT:  entry:
+// CHECK-NEXT:    [[F_ADDR:%.*]] = alloca float, align 4
+// CHECK-NEXT:    store float [[F:%.*]], float* [[F_ADDR]], align 4
+// CHECK-NEXT:    [[TMP0:%.*]] = load float, float* [[F_ADDR]], align 4
+// CHECK-NEXT:    [[TMP1:%.*]] = bitcast float [[TMP0]] to i32
+// CHECK-NEXT:    [[TMP2:%.*]] = shl i32 [[TMP1]], 1
+// CHECK-NEXT:    [[TMP3:%.*]] = icmp ult i32 [[TMP2]], -16777216
+// CHECK-NEXT:    [[TMP4:%.*]] = zext i1 [[TMP3]] to i32
+// CHECK-NEXT:    call void @p(i8* getelementptr inbounds ([12 x i8], [12 x i8]* @.str.6, i64 0, i64 0), i32 [[TMP4]]) #[[ATTR5]]
+// CHECK-NEXT:    ret void
+//
+void test_float_isfinite(float f) {
+  P(isfinite, (f));
+
+  return;
+}
+
+// CHECK-LABEL: @test_double_isfinite(
+// CHECK-NEXT:  entry:
+// CHECK-NEXT:    [[D_ADDR:%.*]] = alloca double, align 8
+// CHECK-NEXT:    store double [[D:%.*]], double* [[D_ADDR]], align 8
+// CHECK-NEXT:    [[TMP0:%.*]] = load double, double* [[D_ADDR]], align 8
+// CHECK-NEXT:    [[TMP1:%.*]] = bitcast double [[TMP0]] to i64
+// CHECK-NEXT:    [[TMP2:%.*]] = shl i64 [[TMP1]], 1
+// CHECK-NEXT:    [[TMP3:%.*]] = icmp ult i64 [[TMP2]], -9007199254740992
+// CHECK-NEXT:    [[TMP4:%.*]] = zext i1 [[TMP3]] to i32
+// CHECK-NEXT:    call void @p(i8* getelementptr inbounds ([12 x i8], [12 x i8]* @.str.7, i64 0, i64 0), i32 [[TMP4]]) #[[ATTR5]]
+// CHECK-NEXT:    ret void
+//
+void test_double_isfinite(double d) {
+  P(isfinite, (d));
 
   return;
 }
@@ -77,13 +168,13 @@ void test_isinf(double d) {
 // CHECK-NEXT:    [[D_ADDR:%.*]] = alloca double, align 8
 // CHECK-NEXT:    store double [[D:%.*]], double* [[D_ADDR]], align 8
 // CHECK-NEXT:    [[TMP0:%.*]] = load double, double* [[D_ADDR]], align 8
-// CHECK-NEXT:    [[TMP1:%.*]] = call double @llvm.fabs.f64(double [[TMP0]]) [[ATTR5]]
-// CHECK-NEXT:    [[ISINF:%.*]] = call i1 @llvm.experimental.constrained.fcmp.f64(double [[TMP1]], double 0x7FF0000000000000, metadata !"oeq", metadata !"fpexcept.strict") [[ATTR4]]
+// CHECK-NEXT:    [[TMP1:%.*]] = call double @llvm.fabs.f64(double [[TMP0]]) #[[ATTR6]]
+// CHECK-NEXT:    [[ISINF:%.*]] = call i1 @llvm.experimental.constrained.fcmp.f64(double [[TMP1]], double 0x7FF0000000000000, metadata !"oeq", metadata !"fpexcept.strict") #[[ATTR5]]
 // CHECK-NEXT:    [[TMP2:%.*]] = bitcast double [[TMP0]] to i64
 // CHECK-NEXT:    [[TMP3:%.*]] = icmp slt i64 [[TMP2]], 0
 // CHECK-NEXT:    [[TMP4:%.*]] = select i1 [[TMP3]], i32 -1, i32 1
 // CHECK-NEXT:    [[TMP5:%.*]] = select i1 [[ISINF]], i32 [[TMP4]], i32 0
-// CHECK-NEXT:    call void @p(i8* getelementptr inbounds ([14 x i8], [14 x i8]* @.str.3, i64 0, i64 0), i32 [[TMP5]]) [[ATTR4]]
+// CHECK-NEXT:    call void @p(i8* getelementptr inbounds ([14 x i8], [14 x i8]* @.str.8, i64 0, i64 0), i32 [[TMP5]]) #[[ATTR5]]
 // CHECK-NEXT:    ret void
 //
 void test_isinf_sign(double d) {
@@ -97,12 +188,9 @@ void test_isinf_sign(double d) {
 // CHECK-NEXT:    [[H_ADDR:%.*]] = alloca half, align 2
 // CHECK-NEXT:    store half [[H:%.*]], half* [[H_ADDR]], align 2
 // CHECK-NEXT:    [[TMP0:%.*]] = load half, half* [[H_ADDR]], align 2
-// CHECK-NEXT:    [[BITCAST:%.*]] = bitcast half [[TMP0]] to i16
-// CHECK-NEXT:    [[ABS:%.*]] = and i16 [[BITCAST]], [[#%u,0x7FFF]]
-// CHECK-NEXT:    [[TMP1:%.*]] = sub i16 [[#%u,0x7C00]], [[ABS]]
-// CHECK-NEXT:    [[ISNAN:%.*]] = lshr i16 [[TMP1]], 15
-// CHECK-NEXT:    [[RES:%.*]] = zext i16 [[ISNAN]] to i32
-// CHECK-NEXT:    call void @p(i8* getelementptr inbounds ([9 x i8], [9 x i8]* @.str.4, i64 0, i64 0), i32 [[RES]]) [[ATTR4]]
+// CHECK-NEXT:    [[TMP1:%.*]] = call i1 @llvm.isnan.f16(half [[TMP0]]) #[[ATTR5]]
+// CHECK-NEXT:    [[TMP2:%.*]] = zext i1 [[TMP1]] to i32
+// CHECK-NEXT:    call void @p(i8* getelementptr inbounds ([9 x i8], [9 x i8]* @.str.9, i64 0, i64 0), i32 [[TMP2]]) #[[ATTR5]]
 // CHECK-NEXT:    ret void
 //
 void test_fp16_isnan(__fp16 h) {
@@ -116,11 +204,9 @@ void test_fp16_isnan(__fp16 h) {
 // CHECK-NEXT:    [[F_ADDR:%.*]] = alloca float, align 4
 // CHECK-NEXT:    store float [[F:%.*]], float* [[F_ADDR]], align 4
 // CHECK-NEXT:    [[TMP0:%.*]] = load float, float* [[F_ADDR]], align 4
-// CHECK-NEXT:    [[BITCAST:%.*]] = bitcast float [[TMP0]] to i32
-// CHECK-NEXT:    [[ABS:%.*]] = and i32 [[BITCAST]], [[#%u,0x7FFFFFFF]]
-// CHECK-NEXT:    [[TMP1:%.*]] = sub i32 [[#%u,0x7F800000]], [[ABS]]
-// CHECK-NEXT:    [[ISNAN:%.*]] = lshr i32 [[TMP1]], 31
-// CHECK-NEXT:    call void @p(i8* getelementptr inbounds ([9 x i8], [9 x i8]* @.str.5, i64 0, i64 0), i32 [[ISNAN]]) [[ATTR4]]
+// CHECK-NEXT:    [[TMP1:%.*]] = call i1 @llvm.isnan.f32(float [[TMP0]]) #[[ATTR5]]
+// CHECK-NEXT:    [[TMP2:%.*]] = zext i1 [[TMP1]] to i32
+// CHECK-NEXT:    call void @p(i8* getelementptr inbounds ([9 x i8], [9 x i8]* @.str.10, i64 0, i64 0), i32 [[TMP2]]) #[[ATTR5]]
 // CHECK-NEXT:    ret void
 //
 void test_float_isnan(float f) {
@@ -134,12 +220,9 @@ void test_float_isnan(float f) {
 // CHECK-NEXT:    [[D_ADDR:%.*]] = alloca double, align 8
 // CHECK-NEXT:    store double [[D:%.*]], double* [[D_ADDR]], align 8
 // CHECK-NEXT:    [[TMP0:%.*]] = load double, double* [[D_ADDR]], align 8
-// CHECK-NEXT:    [[BITCAST:%.*]] = bitcast double [[TMP0]] to i64
-// CHECK-NEXT:    [[ABS:%.*]] = and i64 [[BITCAST]], [[#%u,0x7FFFFFFFFFFFFFFF]]
-// CHECK-NEXT:    [[TMP1:%.*]] = sub i64 [[#%u,0x7FF0000000000000]], [[ABS]]
-// CHECK-NEXT:    [[ISNAN:%.*]] = lshr i64 [[TMP1]], 63
-// CHECK-NEXT:    [[RES:%.*]] = trunc i64 [[ISNAN]] to i32
-// CHECK-NEXT:    call void @p(i8* getelementptr inbounds ([9 x i8], [9 x i8]* @.str.6, i64 0, i64 0), i32 [[RES]]) [[ATTR4]]
+// CHECK-NEXT:    [[TMP1:%.*]] = call i1 @llvm.isnan.f64(double [[TMP0]]) #[[ATTR5]]
+// CHECK-NEXT:    [[TMP2:%.*]] = zext i1 [[TMP1]] to i32
+// CHECK-NEXT:    call void @p(i8* getelementptr inbounds ([9 x i8], [9 x i8]* @.str.11, i64 0, i64 0), i32 [[TMP2]]) #[[ATTR5]]
 // CHECK-NEXT:    ret void
 //
 void test_double_isnan(double d) {
@@ -153,14 +236,14 @@ void test_double_isnan(double d) {
 // CHECK-NEXT:    [[D_ADDR:%.*]] = alloca double, align 8
 // CHECK-NEXT:    store double [[D:%.*]], double* [[D_ADDR]], align 8
 // CHECK-NEXT:    [[TMP0:%.*]] = load double, double* [[D_ADDR]], align 8
-// CHECK-NEXT:    [[ISEQ:%.*]] = call i1 @llvm.experimental.constrained.fcmp.f64(double [[TMP0]], double [[TMP0]], metadata !"oeq", metadata !"fpexcept.strict") [[ATTR4]]
-// CHECK-NEXT:    [[TMP1:%.*]] = call double @llvm.fabs.f64(double [[TMP0]]) [[ATTR5]]
-// CHECK-NEXT:    [[ISINF:%.*]] = call i1 @llvm.experimental.constrained.fcmp.f64(double [[TMP1]], double 0x7FF0000000000000, metadata !"ult", metadata !"fpexcept.strict") [[ATTR4]]
-// CHECK-NEXT:    [[ISNORMAL:%.*]] = call i1 @llvm.experimental.constrained.fcmp.f64(double [[TMP1]], double 0x10000000000000, metadata !"uge", metadata !"fpexcept.strict") [[ATTR4]]
+// CHECK-NEXT:    [[ISEQ:%.*]] = call i1 @llvm.experimental.constrained.fcmp.f64(double [[TMP0]], double [[TMP0]], metadata !"oeq", metadata !"fpexcept.strict") #[[ATTR5]]
+// CHECK-NEXT:    [[TMP1:%.*]] = call double @llvm.fabs.f64(double [[TMP0]]) #[[ATTR6]]
+// CHECK-NEXT:    [[ISINF:%.*]] = call i1 @llvm.experimental.constrained.fcmp.f64(double [[TMP1]], double 0x7FF0000000000000, metadata !"ult", metadata !"fpexcept.strict") #[[ATTR5]]
+// CHECK-NEXT:    [[ISNORMAL:%.*]] = call i1 @llvm.experimental.constrained.fcmp.f64(double [[TMP1]], double 0x10000000000000, metadata !"uge", metadata !"fpexcept.strict") #[[ATTR5]]
 // CHECK-NEXT:    [[AND:%.*]] = and i1 [[ISEQ]], [[ISINF]]
 // CHECK-NEXT:    [[AND1:%.*]] = and i1 [[AND]], [[ISNORMAL]]
 // CHECK-NEXT:    [[TMP2:%.*]] = zext i1 [[AND1]] to i32
-// CHECK-NEXT:    call void @p(i8* getelementptr inbounds ([12 x i8], [12 x i8]* @.str.7, i64 0, i64 0), i32 [[TMP2]]) [[ATTR4]]
+// CHECK-NEXT:    call void @p(i8* getelementptr inbounds ([12 x i8], [12 x i8]* @.str.12, i64 0, i64 0), i32 [[TMP2]]) #[[ATTR5]]
 // CHECK-NEXT:    ret void
 //
 void test_isnormal(double d) {

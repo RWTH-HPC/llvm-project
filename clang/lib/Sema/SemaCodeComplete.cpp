@@ -23,6 +23,7 @@
 #include "clang/AST/QualTypeNames.h"
 #include "clang/AST/RecursiveASTVisitor.h"
 #include "clang/AST/Type.h"
+#include "clang/Basic/AttributeCommonInfo.h"
 #include "clang/Basic/CharInfo.h"
 #include "clang/Basic/OperatorKinds.h"
 #include "clang/Basic/Specifiers.h"
@@ -34,6 +35,7 @@
 #include "clang/Sema/Designator.h"
 #include "clang/Sema/Lookup.h"
 #include "clang/Sema/Overload.h"
+#include "clang/Sema/ParsedAttr.h"
 #include "clang/Sema/Scope.h"
 #include "clang/Sema/ScopeInfo.h"
 #include "clang/Sema/Sema.h"
@@ -381,6 +383,8 @@ public:
 } // namespace
 
 void PreferredTypeBuilder::enterReturn(Sema &S, SourceLocation Tok) {
+  if (!Enabled)
+    return;
   if (isa<BlockDecl>(S.CurContext)) {
     if (sema::BlockScopeInfo *BSI = S.getCurBlock()) {
       ComputeType = nullptr;
@@ -399,6 +403,8 @@ void PreferredTypeBuilder::enterReturn(Sema &S, SourceLocation Tok) {
 }
 
 void PreferredTypeBuilder::enterVariableInit(SourceLocation Tok, Decl *D) {
+  if (!Enabled)
+    return;
   auto *VD = llvm::dyn_cast_or_null<ValueDecl>(D);
   ComputeType = nullptr;
   Type = VD ? VD->getType() : QualType();
@@ -410,6 +416,8 @@ static QualType getDesignatedType(QualType BaseType, const Designation &Desig);
 void PreferredTypeBuilder::enterDesignatedInitializer(SourceLocation Tok,
                                                       QualType BaseType,
                                                       const Designation &D) {
+  if (!Enabled)
+    return;
   ComputeType = nullptr;
   Type = getDesignatedType(BaseType, D);
   ExpectedLoc = Tok;
@@ -417,6 +425,8 @@ void PreferredTypeBuilder::enterDesignatedInitializer(SourceLocation Tok,
 
 void PreferredTypeBuilder::enterFunctionArgument(
     SourceLocation Tok, llvm::function_ref<QualType()> ComputeType) {
+  if (!Enabled)
+    return;
   this->ComputeType = ComputeType;
   Type = QualType();
   ExpectedLoc = Tok;
@@ -424,6 +434,8 @@ void PreferredTypeBuilder::enterFunctionArgument(
 
 void PreferredTypeBuilder::enterParenExpr(SourceLocation Tok,
                                           SourceLocation LParLoc) {
+  if (!Enabled)
+    return;
   // expected type for parenthesized expression does not change.
   if (ExpectedLoc == LParLoc)
     ExpectedLoc = Tok;
@@ -541,6 +553,8 @@ static QualType getPreferredTypeOfUnaryArg(Sema &S, QualType ContextType,
 
 void PreferredTypeBuilder::enterBinary(Sema &S, SourceLocation Tok, Expr *LHS,
                                        tok::TokenKind Op) {
+  if (!Enabled)
+    return;
   ComputeType = nullptr;
   Type = getPreferredTypeOfBinaryRHS(S, LHS, Op);
   ExpectedLoc = Tok;
@@ -548,7 +562,7 @@ void PreferredTypeBuilder::enterBinary(Sema &S, SourceLocation Tok, Expr *LHS,
 
 void PreferredTypeBuilder::enterMemAccess(Sema &S, SourceLocation Tok,
                                           Expr *Base) {
-  if (!Base)
+  if (!Enabled || !Base)
     return;
   // Do we have expected type for Base?
   if (ExpectedLoc != Base->getBeginLoc())
@@ -561,6 +575,8 @@ void PreferredTypeBuilder::enterMemAccess(Sema &S, SourceLocation Tok,
 void PreferredTypeBuilder::enterUnary(Sema &S, SourceLocation Tok,
                                       tok::TokenKind OpKind,
                                       SourceLocation OpLoc) {
+  if (!Enabled)
+    return;
   ComputeType = nullptr;
   Type = getPreferredTypeOfUnaryArg(S, this->get(OpLoc), OpKind);
   ExpectedLoc = Tok;
@@ -568,6 +584,8 @@ void PreferredTypeBuilder::enterUnary(Sema &S, SourceLocation Tok,
 
 void PreferredTypeBuilder::enterSubscript(Sema &S, SourceLocation Tok,
                                           Expr *LHS) {
+  if (!Enabled)
+    return;
   ComputeType = nullptr;
   Type = S.getASTContext().IntTy;
   ExpectedLoc = Tok;
@@ -575,12 +593,16 @@ void PreferredTypeBuilder::enterSubscript(Sema &S, SourceLocation Tok,
 
 void PreferredTypeBuilder::enterTypeCast(SourceLocation Tok,
                                          QualType CastType) {
+  if (!Enabled)
+    return;
   ComputeType = nullptr;
   Type = !CastType.isNull() ? CastType.getCanonicalType() : QualType();
   ExpectedLoc = Tok;
 }
 
 void PreferredTypeBuilder::enterCondition(Sema &S, SourceLocation Tok) {
+  if (!Enabled)
+    return;
   ComputeType = nullptr;
   Type = S.getASTContext().BoolTy;
   ExpectedLoc = Tok;
@@ -719,18 +741,17 @@ getRequiredQualification(ASTContext &Context, const DeclContext *CurContext,
 // Filter out names reserved for the implementation if they come from a
 // system header.
 static bool shouldIgnoreDueToReservedName(const NamedDecl *ND, Sema &SemaRef) {
-  const IdentifierInfo *Id = ND->getIdentifier();
-  if (!Id)
-    return false;
-
+  ReservedIdentifierStatus Status = ND->isReserved(SemaRef.getLangOpts());
   // Ignore reserved names for compiler provided decls.
-  if (Id->isReservedName() && ND->getLocation().isInvalid())
+  if ((Status != ReservedIdentifierStatus::NotReserved) &&
+      (Status != ReservedIdentifierStatus::StartsWithUnderscoreAtGlobalScope) &&
+      ND->getLocation().isInvalid())
     return true;
 
   // For system headers ignore only double-underscore names.
   // This allows for system headers providing private symbols with a single
   // underscore.
-  if (Id->isReservedName(/*doubleUnderscoreOnly=*/true) &&
+  if (Status == ReservedIdentifierStatus::StartsWithDoubleUnderscore &&
       SemaRef.SourceMgr.isInSystemHeader(
           SemaRef.SourceMgr.getSpellingLoc(ND->getLocation())))
     return true;
@@ -3896,6 +3917,9 @@ CXCursorKind clang::getCursorKindForDecl(const Decl *D) {
   case Decl::UnresolvedUsingTypename:
     return CXCursor_UsingDeclaration;
 
+  case Decl::UsingEnum:
+    return CXCursor_EnumDecl;
+
   case Decl::ObjCPropertyImpl:
     switch (cast<ObjCPropertyImplDecl>(D)->getPropertyImplementation()) {
     case ObjCPropertyImplDecl::Dynamic:
@@ -4308,6 +4332,158 @@ void Sema::CodeCompleteDeclSpec(Scope *S, DeclSpec &DS,
 
   // Note that we intentionally suppress macro results here, since we do not
   // encourage using macros to produce the names of entities.
+
+  HandleCodeCompleteResults(this, CodeCompleter, Results.getCompletionContext(),
+                            Results.data(), Results.size());
+}
+
+static const char *underscoreAttrScope(llvm::StringRef Scope) {
+  if (Scope == "clang")
+    return "_Clang";
+  if (Scope == "gnu")
+    return "__gnu__";
+  return nullptr;
+}
+
+static const char *noUnderscoreAttrScope(llvm::StringRef Scope) {
+  if (Scope == "_Clang")
+    return "clang";
+  if (Scope == "__gnu__")
+    return "gnu";
+  return nullptr;
+}
+
+void Sema::CodeCompleteAttribute(AttributeCommonInfo::Syntax Syntax,
+                                 AttributeCompletion Completion,
+                                 const IdentifierInfo *InScope) {
+  if (Completion == AttributeCompletion::None)
+    return;
+  ResultBuilder Results(*this, CodeCompleter->getAllocator(),
+                        CodeCompleter->getCodeCompletionTUInfo(),
+                        CodeCompletionContext::CCC_Attribute);
+
+  // We're going to iterate over the normalized spellings of the attribute.
+  // These don't include "underscore guarding": the normalized spelling is
+  // clang::foo but you can also write _Clang::__foo__.
+  //
+  // (Clang supports a mix like clang::__foo__ but we won't suggest it: either
+  // you care about clashing with macros or you don't).
+  //
+  // So if we're already in a scope, we determine its canonical spellings
+  // (for comparison with normalized attr spelling) and remember whether it was
+  // underscore-guarded (so we know how to spell contained attributes).
+  llvm::StringRef InScopeName;
+  bool InScopeUnderscore = false;
+  if (InScope) {
+    InScopeName = InScope->getName();
+    if (const char *NoUnderscore = noUnderscoreAttrScope(InScopeName)) {
+      InScopeName = NoUnderscore;
+      InScopeUnderscore = true;
+    }
+  }
+  bool SyntaxSupportsGuards = Syntax == AttributeCommonInfo::AS_GNU ||
+                              Syntax == AttributeCommonInfo::AS_CXX11 ||
+                              Syntax == AttributeCommonInfo::AS_C2x;
+
+  llvm::DenseSet<llvm::StringRef> FoundScopes;
+  auto AddCompletions = [&](const ParsedAttrInfo &A) {
+    if (A.IsTargetSpecific && !A.existsInTarget(Context.getTargetInfo()))
+      return;
+    if (!A.acceptsLangOpts(getLangOpts()))
+      return;
+    for (const auto &S : A.Spellings) {
+      if (S.Syntax != Syntax)
+        continue;
+      llvm::StringRef Name = S.NormalizedFullName;
+      llvm::StringRef Scope;
+      if ((Syntax == AttributeCommonInfo::AS_CXX11 ||
+           Syntax == AttributeCommonInfo::AS_C2x)) {
+        std::tie(Scope, Name) = Name.split("::");
+        if (Name.empty()) // oops, unscoped
+          std::swap(Name, Scope);
+      }
+
+      // Do we just want a list of scopes rather than attributes?
+      if (Completion == AttributeCompletion::Scope) {
+        // Make sure to emit each scope only once.
+        if (!Scope.empty() && FoundScopes.insert(Scope).second) {
+          Results.AddResult(
+              CodeCompletionResult(Results.getAllocator().CopyString(Scope)));
+          // Include alternate form (__gnu__ instead of gnu).
+          if (const char *Scope2 = underscoreAttrScope(Scope))
+            Results.AddResult(CodeCompletionResult(Scope2));
+        }
+        continue;
+      }
+
+      // If a scope was specified, it must match but we don't need to print it.
+      if (!InScopeName.empty()) {
+        if (Scope != InScopeName)
+          continue;
+        Scope = "";
+      }
+
+      auto Add = [&](llvm::StringRef Scope, llvm::StringRef Name,
+                     bool Underscores) {
+        CodeCompletionBuilder Builder(Results.getAllocator(),
+                                      Results.getCodeCompletionTUInfo());
+        llvm::SmallString<32> Text;
+        if (!Scope.empty()) {
+          Text.append(Scope);
+          Text.append("::");
+        }
+        if (Underscores)
+          Text.append("__");
+        Text.append(Name);
+        if (Underscores)
+          Text.append("__");
+        Builder.AddTypedTextChunk(Results.getAllocator().CopyString(Text));
+
+        if (!A.ArgNames.empty()) {
+          Builder.AddChunk(CodeCompletionString::CK_LeftParen, "(");
+          bool First = true;
+          for (const char *Arg : A.ArgNames) {
+            if (!First)
+              Builder.AddChunk(CodeCompletionString::CK_Comma, ", ");
+            First = false;
+            Builder.AddPlaceholderChunk(Arg);
+          }
+          Builder.AddChunk(CodeCompletionString::CK_RightParen, ")");
+        }
+
+        Results.AddResult(Builder.TakeString());
+      };
+
+      // Generate the non-underscore-guarded result.
+      // Note this is (a suffix of) the NormalizedFullName, no need to copy.
+      // If an underscore-guarded scope was specified, only the
+      // underscore-guarded attribute name is relevant.
+      if (!InScopeUnderscore)
+        Add(Scope, Name, /*Underscores=*/false);
+
+      // Generate the underscore-guarded version, for syntaxes that support it.
+      // We skip this if the scope was already spelled and not guarded, or
+      // we must spell it and can't guard it.
+      if (!(InScope && !InScopeUnderscore) && SyntaxSupportsGuards) {
+        llvm::SmallString<32> Guarded;
+        if (Scope.empty()) {
+          Add(Scope, Name, /*Underscores=*/true);
+        } else {
+          const char *GuardedScope = underscoreAttrScope(Scope);
+          if (!GuardedScope)
+            continue;
+          Add(GuardedScope, Name, /*Underscores=*/true);
+        }
+      }
+
+      // It may be nice to include the Kind so we can look up the docs later.
+    }
+  };
+
+  for (const auto *A : ParsedAttrInfo::getAllBuiltin())
+    AddCompletions(*A);
+  for (const auto &Entry : ParsedAttrInfoRegistry::entries())
+    AddCompletions(*Entry.instantiate());
 
   HandleCodeCompleteResults(this, CodeCompleter, Results.getCompletionContext(),
                             Results.data(), Results.size());
@@ -5237,7 +5413,7 @@ QualType getApproximateType(const Expr *E) {
       Base = Base->getPointeeType(); // could handle unique_ptr etc here?
     RecordDecl *RD = Base.isNull() ? nullptr : getAsRecordDecl(Base);
     if (RD && RD->isCompleteDefinition()) {
-      for (const auto &Member : RD->lookup(CDSME->getMember()))
+      for (const auto *Member : RD->lookup(CDSME->getMember()))
         if (const ValueDecl *VD = llvm::dyn_cast<ValueDecl>(Member))
           return VD->getType().getNonReferenceType();
     }
@@ -5691,8 +5867,9 @@ ProduceSignatureHelp(Sema &SemaRef, Scope *S,
                      unsigned CurrentArg, SourceLocation OpenParLoc) {
   if (Candidates.empty())
     return QualType();
-  SemaRef.CodeCompleter->ProcessOverloadCandidates(
-      SemaRef, CurrentArg, Candidates.data(), Candidates.size(), OpenParLoc);
+  if (SemaRef.getPreprocessor().isCodeCompletionReached())
+    SemaRef.CodeCompleter->ProcessOverloadCandidates(
+        SemaRef, CurrentArg, Candidates.data(), Candidates.size(), OpenParLoc);
   return getParamType(SemaRef, Candidates, CurrentArg);
 }
 
@@ -5870,7 +6047,7 @@ static QualType getDesignatedType(QualType BaseType, const Designation &Desig) {
       assert(D.isFieldDesignator());
       auto *RD = getAsRecordDecl(BaseType);
       if (RD && RD->isCompleteDefinition()) {
-        for (const auto &Member : RD->lookup(D.getField()))
+        for (const auto *Member : RD->lookup(D.getField()))
           if (const FieldDecl *FD = llvm::dyn_cast<FieldDecl>(Member)) {
             NextType = FD->getType();
             break;
@@ -9178,6 +9355,18 @@ void Sema::CodeCompletePreprocessorDirective(bool InConditional) {
     Builder.AddPlaceholderChunk("condition");
     Results.AddResult(Builder.TakeString());
 
+    // #elifdef <macro>
+    Builder.AddTypedTextChunk("elifdef");
+    Builder.AddChunk(CodeCompletionString::CK_HorizontalSpace);
+    Builder.AddPlaceholderChunk("macro");
+    Results.AddResult(Builder.TakeString());
+
+    // #elifndef <macro>
+    Builder.AddTypedTextChunk("elifndef");
+    Builder.AddChunk(CodeCompletionString::CK_HorizontalSpace);
+    Builder.AddPlaceholderChunk("macro");
+    Results.AddResult(Builder.TakeString());
+
     // #else
     Builder.AddTypedTextChunk("else");
     Results.AddResult(Builder.TakeString());
@@ -9456,10 +9645,10 @@ void Sema::CodeCompleteIncludedFile(llvm::StringRef Dir, bool Angled) {
         // Only files that really look like headers. (Except in system dirs).
         if (!IsSystem) {
           // Header extensions from Types.def, which we can't depend on here.
-          if (!(Filename.endswith_lower(".h") ||
-                Filename.endswith_lower(".hh") ||
-                Filename.endswith_lower(".hpp") ||
-                Filename.endswith_lower(".inc")))
+          if (!(Filename.endswith_insensitive(".h") ||
+                Filename.endswith_insensitive(".hh") ||
+                Filename.endswith_insensitive(".hpp") ||
+                Filename.endswith_insensitive(".inc")))
             break;
         }
         AddCompletion(Filename, /*IsDirectory=*/false);

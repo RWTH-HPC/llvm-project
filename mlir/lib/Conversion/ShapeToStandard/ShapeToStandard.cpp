@@ -139,7 +139,7 @@ LogicalResult BroadcastOpConverter::matchAndRewrite(
   // dimension in the tensor.
   SmallVector<Value> ranks, rankDiffs;
   llvm::append_range(ranks, llvm::map_range(transformed.shapes(), [&](Value v) {
-                       return lb.create<DimOp>(v, zero);
+                       return lb.create<tensor::DimOp>(v, zero);
                      }));
 
   // Find the maximum rank
@@ -154,17 +154,18 @@ LogicalResult BroadcastOpConverter::matchAndRewrite(
                        return lb.create<SubIOp>(indexTy, maxRank, v);
                      }));
 
-  rewriter.replaceOp(
-      op, lb.create<tensor::GenerateOp>(
-                getExtentTensorType(lb.getContext()), ValueRange{maxRank},
-                [&](OpBuilder &b, Location loc, ValueRange args) {
-                  Value broadcastedDim = getBroadcastedDim(
-                      ImplicitLocOpBuilder(loc, b), transformed.shapes(),
-                      rankDiffs, args[0]);
+  Value replacement = lb.create<tensor::GenerateOp>(
+      getExtentTensorType(lb.getContext()), ValueRange{maxRank},
+      [&](OpBuilder &b, Location loc, ValueRange args) {
+        Value broadcastedDim =
+            getBroadcastedDim(ImplicitLocOpBuilder(loc, b),
+                              transformed.shapes(), rankDiffs, args[0]);
 
-                  b.create<tensor::YieldOp>(loc, broadcastedDim);
-                })
-              ->getResults());
+        b.create<tensor::YieldOp>(loc, broadcastedDim);
+      });
+  if (replacement.getType() != op.getType())
+    replacement = lb.create<tensor::CastOp>(op.getType(), replacement);
+  rewriter.replaceOp(op, replacement);
   return success();
 }
 
@@ -252,7 +253,7 @@ LogicalResult IsBroadcastableOpConverter::matchAndRewrite(
   // dimension in the tensor.
   SmallVector<Value> ranks, rankDiffs;
   llvm::append_range(ranks, llvm::map_range(transformed.shapes(), [&](Value v) {
-                       return lb.create<DimOp>(v, zero);
+                       return lb.create<tensor::DimOp>(v, zero);
                      }));
 
   // Find the maximum rank
@@ -344,8 +345,8 @@ LogicalResult GetExtentOpConverter::matchAndRewrite(
   // circumvents the necessity to materialize the shape in memory.
   if (auto shapeOfOp = op.shape().getDefiningOp<ShapeOfOp>()) {
     if (shapeOfOp.arg().getType().isa<ShapedType>()) {
-      rewriter.replaceOpWithNewOp<DimOp>(op, shapeOfOp.arg(),
-                                         transformed.dim());
+      rewriter.replaceOpWithNewOp<tensor::DimOp>(op, shapeOfOp.arg(),
+                                                 transformed.dim());
       return success();
     }
   }
@@ -375,7 +376,7 @@ RankOpConverter::matchAndRewrite(shape::RankOp op, ArrayRef<Value> operands,
     return failure();
 
   shape::RankOp::Adaptor transformed(operands);
-  rewriter.replaceOpWithNewOp<DimOp>(op, transformed.shape(), 0);
+  rewriter.replaceOpWithNewOp<tensor::DimOp>(op, transformed.shape(), 0);
   return success();
 }
 
@@ -404,7 +405,8 @@ ReduceOpConverter::matchAndRewrite(shape::ReduceOp op, ArrayRef<Value> operands,
   Value zero = rewriter.create<ConstantIndexOp>(loc, 0);
   Value one = rewriter.create<ConstantIndexOp>(loc, 1);
   Type indexTy = rewriter.getIndexType();
-  Value rank = rewriter.create<DimOp>(loc, indexTy, transformed.shape(), zero);
+  Value rank =
+      rewriter.create<tensor::DimOp>(loc, indexTy, transformed.shape(), zero);
 
   auto loop = rewriter.create<scf::ForOp>(
       loc, zero, rank, one, op.initVals(),
@@ -490,11 +492,12 @@ ShapeEqOpConverter::matchAndRewrite(ShapeEqOp op, ArrayRef<Value> operands,
   Type indexTy = rewriter.getIndexType();
   Value zero = rewriter.create<ConstantIndexOp>(loc, 0);
   Value firstShape = transformed.shapes().front();
-  Value firstRank = rewriter.create<DimOp>(loc, indexTy, firstShape, zero);
+  Value firstRank =
+      rewriter.create<tensor::DimOp>(loc, indexTy, firstShape, zero);
   Value result = nullptr;
   // Generate a linear sequence of compares, all with firstShape as lhs.
   for (Value shape : transformed.shapes().drop_front(1)) {
-    Value rank = rewriter.create<DimOp>(loc, indexTy, shape, zero);
+    Value rank = rewriter.create<tensor::DimOp>(loc, indexTy, shape, zero);
     Value eqRank =
         rewriter.create<CmpIOp>(loc, CmpIPredicate::eq, firstRank, rank);
     auto same = rewriter.create<IfOp>(
@@ -559,7 +562,7 @@ LogicalResult ShapeOfOpConversion::matchAndRewrite(
     int64_t rank = rankedTensorTy.getRank();
     for (int64_t i = 0; i < rank; i++) {
       if (rankedTensorTy.isDynamicDim(i)) {
-        Value extent = rewriter.create<DimOp>(loc, tensor, i);
+        Value extent = rewriter.create<tensor::DimOp>(loc, tensor, i);
         extentValues.push_back(extent);
       } else {
         Value extent =
@@ -583,7 +586,7 @@ LogicalResult ShapeOfOpConversion::matchAndRewrite(
       op, getExtentTensorType(ctx), ValueRange{rank},
       [&](OpBuilder &b, Location loc, ValueRange args) {
         Value dim = args.front();
-        Value extent = b.create<DimOp>(loc, tensor, dim);
+        Value extent = b.create<tensor::DimOp>(loc, tensor, dim);
         b.create<tensor::YieldOp>(loc, extent);
       });
 
@@ -613,7 +616,7 @@ LogicalResult SplitAtOpConversion::matchAndRewrite(
   SplitAtOp::Adaptor transformed(op);
   ImplicitLocOpBuilder b(op.getLoc(), rewriter);
   Value zero = b.create<ConstantIndexOp>(0);
-  Value rank = b.create<DimOp>(transformed.operand(), zero);
+  Value rank = b.create<tensor::DimOp>(transformed.operand(), zero);
 
   // index < 0 ? index + rank : index
   Value originalIndex = transformed.index();
@@ -623,10 +626,11 @@ LogicalResult SplitAtOpConversion::matchAndRewrite(
   Value index = b.create<SelectOp>(indexIsNegative, add, originalIndex);
 
   Value one = b.create<ConstantIndexOp>(1);
-  Value head = b.create<SubTensorOp>(transformed.operand(), zero, index, one);
+  Value head =
+      b.create<tensor::ExtractSliceOp>(transformed.operand(), zero, index, one);
   Value tailSize = b.create<SubIOp>(rank, index);
-  Value tail =
-      b.create<SubTensorOp>(transformed.operand(), index, tailSize, one);
+  Value tail = b.create<tensor::ExtractSliceOp>(transformed.operand(), index,
+                                                tailSize, one);
   rewriter.replaceOp(op, {head, tail});
   return success();
 }
@@ -672,11 +676,11 @@ void ConvertShapeToStandardPass::runOnOperation() {
   ConversionTarget target(ctx);
   target
       .addLegalDialect<StandardOpsDialect, SCFDialect, tensor::TensorDialect>();
-  target.addLegalOp<CstrRequireOp, FuncOp, ModuleOp, ModuleTerminatorOp>();
+  target.addLegalOp<CstrRequireOp, FuncOp, ModuleOp>();
 
   // Setup conversion patterns.
-  OwningRewritePatternList patterns;
-  populateShapeToStandardConversionPatterns(patterns, &ctx);
+  RewritePatternSet patterns(&ctx);
+  populateShapeToStandardConversionPatterns(patterns);
 
   // Apply conversion.
   auto module = getOperation();
@@ -685,10 +689,10 @@ void ConvertShapeToStandardPass::runOnOperation() {
 }
 
 void mlir::populateShapeToStandardConversionPatterns(
-    OwningRewritePatternList &patterns, MLIRContext *ctx) {
+    RewritePatternSet &patterns) {
   // clang-format off
-  populateWithGenerated(ctx, patterns);
-  patterns.insert<
+  populateWithGenerated(patterns);
+  patterns.add<
       AnyOpConversion,
       BinaryOpConversion<AddOp, AddIOp>,
       BinaryOpConversion<MulOp, MulIOp>,
@@ -702,7 +706,7 @@ void mlir::populateShapeToStandardConversionPatterns(
       ShapeEqOpConverter,
       ShapeOfOpConversion,
       SplitAtOpConversion,
-      ToExtentTensorOpConversion>(ctx);
+      ToExtentTensorOpConversion>(patterns.getContext());
   // clang-format on
 }
 

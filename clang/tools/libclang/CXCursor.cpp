@@ -336,6 +336,7 @@ CXCursor cxcursor::MakeCXCursor(const Stmt *S, const Decl *Parent,
   case Stmt::ObjCBoxedExprClass:
   case Stmt::ObjCSubscriptRefExprClass:
   case Stmt::RecoveryExprClass:
+  case Stmt::SYCLUniqueStableNameExprClass:
     K = CXCursor_UnexposedExpr;
     break;
 
@@ -651,6 +652,9 @@ CXCursor cxcursor::MakeCXCursor(const Stmt *S, const Decl *Parent,
   case Stmt::OMPTileDirectiveClass:
     K = CXCursor_OMPTileDirective;
     break;
+  case Stmt::OMPUnrollDirectiveClass:
+    K = CXCursor_OMPUnrollDirective;
+    break;
   case Stmt::OMPForDirectiveClass:
     K = CXCursor_OMPForDirective;
     break;
@@ -806,6 +810,15 @@ CXCursor cxcursor::MakeCXCursor(const Stmt *S, const Decl *Parent,
     break;
   case Stmt::OMPTargetTeamsDistributeSimdDirectiveClass:
     K = CXCursor_OMPTargetTeamsDistributeSimdDirective;
+    break;
+  case Stmt::OMPInteropDirectiveClass:
+    K = CXCursor_OMPInteropDirective;
+    break;
+  case Stmt::OMPDispatchDirectiveClass:
+    K = CXCursor_OMPDispatchDirective;
+    break;
+  case Stmt::OMPMaskedDirectiveClass:
+    K = CXCursor_OMPMaskedDirective;
     break;
   case Stmt::BuiltinBitCastExprClass:
     K = CXCursor_BuiltinBitCastExpr;

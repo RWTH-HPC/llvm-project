@@ -14,6 +14,7 @@
 #include "mlir/Dialect/Linalg/Transforms/CodegenStrategy.h"
 
 #include "mlir/Dialect/Linalg/Transforms/Hoisting.h"
+#include "mlir/Dialect/SCF/Transforms.h"
 #include "mlir/Dialect/Vector/VectorOps.h"
 #include "mlir/Dialect/Vector/VectorTransforms.h"
 #include "mlir/Pass/PassManager.h"
@@ -31,7 +32,7 @@ void mlir::linalg::CodegenStrategy::transform(FuncOp func) const {
   // Emplace patterns one at a time while also maintaining a simple chained
   // state transition.
   unsigned stepCount = 0;
-  SmallVector<FrozenRewritePatternList, 4> stage1Patterns;
+  SmallVector<FrozenRewritePatternSet, 4> stage1Patterns;
   auto zeroState = Identifier::get(std::to_string(stepCount), context);
   auto currentState = zeroState;
   for (const std::unique_ptr<Transformation> &t : transformationSequence) {
@@ -45,9 +46,9 @@ void mlir::linalg::CodegenStrategy::transform(FuncOp func) const {
     currentState = nextState;
   }
 
-  OwningRewritePatternList stage2Patterns =
+  RewritePatternSet stage2Patterns =
       linalg::getLinalgTilingCanonicalizationPatterns(context);
-  stage2Patterns.insert<AffineMinSCFCanonicalizationPattern>(context);
+  scf::populateSCFForLoopCanonicalizationPatterns(stage2Patterns);
 
   auto stage3Transforms = [&](Operation *op) {
     // Some of these may be too aggressive as a stage 3 that is applied on each
@@ -76,27 +77,29 @@ void mlir::linalg::CodegenStrategy::transform(FuncOp func) const {
 
   // Programmatic splitting of slow/fast path vector transfers.
   if (lateCodegenStrategyOptions.enableVectorTransferPartialRewrite) {
-    OwningRewritePatternList patterns;
-    patterns.insert<vector::VectorTransferFullPartialRewriter>(
+    RewritePatternSet patterns(context);
+    patterns.add<vector::VectorTransferFullPartialRewriter>(
         context, vectorTransformsOptions);
     (void)applyPatternsAndFoldGreedily(func, std::move(patterns));
   }
 
   // Programmatic controlled lowering of vector.contract only.
   if (lateCodegenStrategyOptions.enableVectorContractLowering) {
-    OwningRewritePatternList vectorContractLoweringPatterns;
+    RewritePatternSet vectorContractLoweringPatterns(context);
     vectorContractLoweringPatterns
-        .insert<ContractionOpToOuterProductOpLowering,
-                ContractionOpToMatmulOpLowering, ContractionOpLowering>(
+        .add<ContractionOpToOuterProductOpLowering,
+             ContractionOpToMatmulOpLowering, ContractionOpLowering>(
             vectorTransformsOptions, context);
+    vector::populateVectorTransferPermutationMapLoweringPatterns(
+        vectorContractLoweringPatterns);
     (void)applyPatternsAndFoldGreedily(
         func, std::move(vectorContractLoweringPatterns));
   }
 
   // Programmatic controlled lowering of vector.transfer only.
   if (lateCodegenStrategyOptions.enableVectorToSCFConversion) {
-    OwningRewritePatternList vectorToLoopsPatterns;
-    populateVectorToSCFConversionPatterns(vectorToLoopsPatterns, context,
+    RewritePatternSet vectorToLoopsPatterns(context);
+    populateVectorToSCFConversionPatterns(vectorToLoopsPatterns,
                                           vectorToSCFOptions);
     (void)applyPatternsAndFoldGreedily(func, std::move(vectorToLoopsPatterns));
   }

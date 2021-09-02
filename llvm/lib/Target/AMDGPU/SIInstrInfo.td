@@ -16,7 +16,7 @@ class GCNPredicateControl : PredicateControl {
   Predicate VIAssemblerPredicate = isGFX8GFX9;
 }
 
-// Execpt for the NONE field, this must be kept in sync with the
+// Except for the NONE field, this must be kept in sync with the
 // SIEncodingFamily enum in AMDGPUInstrInfo.cpp
 def SIEncodingFamily {
   int NONE = -1;
@@ -527,15 +527,7 @@ def atomic_store_local_64_m0 : PatFrag <
 def si_setcc_uniform : PatFrag <
   (ops node:$lhs, node:$rhs, node:$cond),
   (setcc node:$lhs, node:$rhs, node:$cond), [{
-  for (SDNode *Use : N->uses()) {
-    if (Use->isMachineOpcode() || Use->getOpcode() != ISD::CopyToReg)
-      return false;
-
-    unsigned Reg = cast<RegisterSDNode>(Use->getOperand(1))->getReg();
-    if (Reg != AMDGPU::SCC)
-      return false;
-  }
-  return true;
+  return !N->isDivergent();
 }]>;
 
 //===----------------------------------------------------------------------===//
@@ -814,28 +806,26 @@ def NegSubInlineConstV216 : PatLeaf<(build_vector), [{
          (isNullConstantOrUndef(Src1) && isNegInlineImmediate(Src0.getNode()));
 }], getNegV2I16Imm>;
 
+
+def fp16_zeros_high_16bits : PatLeaf<(f16 VGPR_32:$src), [{
+  return fp16SrcZerosHighBits(N->getOpcode());
+}]>;
+
+
 //===----------------------------------------------------------------------===//
 // MUBUF/SMEM Patterns
 //===----------------------------------------------------------------------===//
 
-def extract_glc : SDNodeXForm<timm, [{
-  return CurDAG->getTargetConstant(N->getZExtValue() & 1, SDLoc(N), MVT::i8);
-}]>;
-
-def extract_slc : SDNodeXForm<timm, [{
-  return CurDAG->getTargetConstant((N->getZExtValue() >> 1) & 1, SDLoc(N), MVT::i8);
-}]>;
-
-def extract_dlc : SDNodeXForm<timm, [{
-  return CurDAG->getTargetConstant((N->getZExtValue() >> 2) & 1, SDLoc(N), MVT::i8);
+def extract_cpol : SDNodeXForm<timm, [{
+  return CurDAG->getTargetConstant(N->getZExtValue() & AMDGPU::CPol::ALL, SDLoc(N), MVT::i8);
 }]>;
 
 def extract_swz : SDNodeXForm<timm, [{
   return CurDAG->getTargetConstant((N->getZExtValue() >> 3) & 1, SDLoc(N), MVT::i8);
 }]>;
 
-def extract_sccb : SDNodeXForm<timm, [{
-  return CurDAG->getTargetConstant((N->getZExtValue() >> 4) & 1, SDLoc(N), MVT::i8);
+def set_glc : SDNodeXForm<timm, [{
+  return CurDAG->getTargetConstant(N->getZExtValue() | AMDGPU::CPol::GLC, SDLoc(N), MVT::i8);
 }]>;
 
 //===----------------------------------------------------------------------===//
@@ -1090,6 +1080,12 @@ class NamedOperandU32Default0<string Name, AsmOperandClass MatchClass> :
   let ParserMatchClass = MatchClass;
 }
 
+class NamedOperandU32Default1<string Name, AsmOperandClass MatchClass> :
+  OperandWithDefaultOps<i32, (ops (i32 1))> {
+  let PrintMethod = "print"#Name;
+  let ParserMatchClass = MatchClass;
+}
+
 let OperandType = "OPERAND_IMMEDIATE" in {
 
 def offen : NamedOperandBit<"Offen", NamedMatchClass<"Offen">>;
@@ -1113,21 +1109,14 @@ def clampmod : NamedOperandBit<"ClampSI", NamedMatchClass<"ClampSI">>;
 def clampmod0 : NamedOperandBit_0<"ClampSI", NamedMatchClass<"ClampSI">>;
 def highmod : NamedOperandBit<"High", NamedMatchClass<"High">>;
 
-def SCCB : NamedOperandBit<"SCCB", NamedMatchClass<"SCCB">>;
-def SCCB_0 : NamedOperandBit_0<"SCCB", NamedMatchClass<"SCCB">>;
-
-def DLC : NamedOperandBit<"DLC", NamedMatchClass<"DLC">>;
-def DLC_0 : NamedOperandBit_0<"DLC", NamedMatchClass<"DLC">>;
-
-def GLC : NamedOperandBit<"GLC", NamedMatchClass<"GLC">>;
-def GLC_0 : NamedOperandBit_0<"GLC", NamedMatchClass<"GLC">>;
-def GLC_1 : NamedOperandBit_1<"GLC", NamedMatchClass<"GLC_1">>;
-
-def SLC : NamedOperandBit<"SLC", NamedMatchClass<"SLC">>;
-def SLC_0 : NamedOperandBit_0<"SLC", NamedMatchClass<"SLC">>;
+def CPol : NamedOperandU32<"CPol", NamedMatchClass<"CPol">>;
+def CPol_0 : NamedOperandU32Default0<"CPol", NamedMatchClass<"CPol">>;
+def CPol_GLC1 : NamedOperandU32Default1<"CPol", NamedMatchClass<"CPol">>;
 
 def TFE : NamedOperandBit<"TFE", NamedMatchClass<"TFE">>;
+def TFE_0 : NamedOperandBit_0<"TFE", NamedMatchClass<"TFE">>;
 def SWZ : NamedOperandBit<"SWZ", NamedMatchClass<"SWZ">>;
+def SWZ_0 : NamedOperandBit_0<"SWZ", NamedMatchClass<"SWZ">>;
 def UNorm : NamedOperandBit<"UNorm", NamedMatchClass<"UNorm">>;
 def DA : NamedOperandBit<"DA", NamedMatchClass<"DA">>;
 def R128A16 : NamedOperandBit<"R128A16", NamedMatchClass<"R128A16">>;
@@ -1380,11 +1369,6 @@ def DSTCLAMP {
 
 def DSTOMOD {
   int NONE = 0;
-}
-
-def TRAPID{
-  int LLVM_TRAP = 2;
-  int LLVM_DEBUG_TRAP = 3;
 }
 
 def HWREG {
@@ -1723,7 +1707,7 @@ class getInsVOP3OpSel <RegisterOperand Src0RC, RegisterOperand Src1RC,
                     Src0Mod, Src1Mod, Src2Mod, 1/*HasOpSel*/, 0>.ret;
 }
 
-class getInsDPPBase <RegisterOperand DstRC, RegisterClass Src0RC, RegisterClass Src1RC,
+class getInsDPPBase <RegisterOperand OldRC, RegisterClass Src0RC, RegisterClass Src1RC,
                  int NumSrcArgs, bit HasModifiers,
                  Operand Src0Mod, Operand Src1Mod> {
 
@@ -1733,45 +1717,45 @@ class getInsDPPBase <RegisterOperand DstRC, RegisterClass Src0RC, RegisterClass 
             !if (!eq(NumSrcArgs, 1),
               !if (HasModifiers,
                 // VOP1_DPP with modifiers
-                (ins DstRC:$old, Src0Mod:$src0_modifiers,
+                (ins OldRC:$old, Src0Mod:$src0_modifiers,
                      Src0RC:$src0)
               /* else */,
                 // VOP1_DPP without modifiers
-                (ins DstRC:$old, Src0RC:$src0)
+                (ins OldRC:$old, Src0RC:$src0)
               /* endif */),
               !if (HasModifiers,
                 // VOP2_DPP with modifiers
-                (ins DstRC:$old,
+                (ins OldRC:$old,
                      Src0Mod:$src0_modifiers, Src0RC:$src0,
                      Src1Mod:$src1_modifiers, Src1RC:$src1)
               /* else */,
                 // VOP2_DPP without modifiers
-                (ins DstRC:$old,
+                (ins OldRC:$old,
                      Src0RC:$src0, Src1RC:$src1)
                 )));
 }
 
-class getInsDPP <RegisterOperand DstRC, RegisterClass Src0RC, RegisterClass Src1RC,
+class getInsDPP <RegisterOperand OldRC, RegisterClass Src0RC, RegisterClass Src1RC,
                  int NumSrcArgs, bit HasModifiers,
                  Operand Src0Mod, Operand Src1Mod> {
-  dag ret = !con(getInsDPPBase<DstRC, Src0RC, Src1RC, NumSrcArgs,
+  dag ret = !con(getInsDPPBase<OldRC, Src0RC, Src1RC, NumSrcArgs,
                                HasModifiers, Src0Mod, Src1Mod>.ret,
                  (ins dpp_ctrl:$dpp_ctrl, row_mask:$row_mask,
                   bank_mask:$bank_mask, bound_ctrl:$bound_ctrl));
 }
 
-class getInsDPP16 <RegisterOperand DstRC, RegisterClass Src0RC, RegisterClass Src1RC,
+class getInsDPP16 <RegisterOperand OldRC, RegisterClass Src0RC, RegisterClass Src1RC,
                  int NumSrcArgs, bit HasModifiers,
                  Operand Src0Mod, Operand Src1Mod> {
-  dag ret = !con(getInsDPP<DstRC, Src0RC, Src1RC, NumSrcArgs,
+  dag ret = !con(getInsDPP<OldRC, Src0RC, Src1RC, NumSrcArgs,
                            HasModifiers, Src0Mod, Src1Mod>.ret,
                  (ins FI:$fi));
 }
 
-class getInsDPP8 <RegisterOperand DstRC, RegisterClass Src0RC, RegisterClass Src1RC,
+class getInsDPP8 <RegisterOperand OldRC, RegisterClass Src0RC, RegisterClass Src1RC,
                  int NumSrcArgs, bit HasModifiers,
                  Operand Src0Mod, Operand Src1Mod> {
-  dag ret = !con(getInsDPPBase<DstRC, Src0RC, Src1RC, NumSrcArgs,
+  dag ret = !con(getInsDPPBase<OldRC, Src0RC, Src1RC, NumSrcArgs,
                                HasModifiers, Src0Mod, Src1Mod>.ret,
                  (ins dpp8:$dpp8, FI:$fi));
 }
@@ -1874,7 +1858,7 @@ class getAsm64 <bit HasDst, int NumSrcArgs, bit HasIntClamp, bit HasModifiers,
 // instruction.
 class getAsmVOP3P <bit HasDst, int NumSrcArgs, bit HasModifiers,
                    bit HasClamp, ValueType DstVT = i32> {
-  string dst = " $vdst";
+  string dst = "$vdst";
   string src0 = !if(!eq(NumSrcArgs, 1), "$src0", "$src0,");
   string src1 = !if(!eq(NumSrcArgs, 1), "",
                    !if(!eq(NumSrcArgs, 2), " $src1",
@@ -1895,7 +1879,7 @@ class getAsmVOP3OpSel <int NumSrcArgs,
                        bit Src0HasMods,
                        bit Src1HasMods,
                        bit Src2HasMods> {
-  string dst = " $vdst";
+  string dst = "$vdst";
 
   string isrc0 = !if(!eq(NumSrcArgs, 1), "$src0", "$src0,");
   string isrc1 = !if(!eq(NumSrcArgs, 1), "",
@@ -2114,6 +2098,7 @@ class VOPProfile <list<ValueType> _ArgVT, bit _EnableF32SrcMods = 0,
   field bit HasDst = !ne(DstVT.Value, untyped.Value);
   field bit HasDst32 = HasDst;
   field bit EmitDst = HasDst; // force dst encoding, see v_movreld_b32 special case
+  field bit EmitDstSel = EmitDst;
   field int NumSrcArgs = getNumSrcArgs<Src0VT, Src1VT, Src2VT>.ret;
   field bit HasSrc0 = !ne(Src0VT.Value, untyped.Value);
   field bit HasSrc1 = !ne(Src1VT.Value, untyped.Value);
@@ -2161,6 +2146,7 @@ class VOPProfile <list<ValueType> _ArgVT, bit _EnableF32SrcMods = 0,
 
   field bit IsMAI = 0;
   field bit IsDOT = 0;
+  field bit IsSingle = 0;
 
   field Operand Src0PackedMod = !if(HasSrc0FloatMods, PackedF16InputMods, PackedI16InputMods);
   field Operand Src1PackedMod = !if(HasSrc1FloatMods, PackedF16InputMods, PackedI16InputMods);
@@ -2212,7 +2198,9 @@ class VOPProfile <list<ValueType> _ArgVT, bit _EnableF32SrcMods = 0,
   field string AsmDPP = !if(HasExtDPP,
                             getAsmDPP<HasDst, NumSrcArgs, HasModifiers, DstVT>.ret, "");
   field string AsmDPP16 = getAsmDPP16<HasDst, NumSrcArgs, HasModifiers, DstVT>.ret;
-  field string AsmDPP8 = getAsmDPP8<HasDst, NumSrcArgs, 0, DstVT>.ret;
+  // DPP8 encoding has no fields for modifiers, and it is enforced by setting
+  // the asm operand name via this HasModifiers flag
+  field string AsmDPP8 = getAsmDPP8<HasDst, NumSrcArgs, 0 /*HasModifiers*/, DstVT>.ret;
   field string AsmSDWA = getAsmSDWA<HasDst, NumSrcArgs, DstVT>.ret;
   field string AsmSDWA9 = getAsmSDWA9<HasDst, HasSDWAOMod, NumSrcArgs, DstVT>.ret;
 
@@ -2517,6 +2505,15 @@ def getGlobalSaddrOp : InstrMapping {
   let ValueCols = [["1"]];
 }
 
+// Maps a GLOBAL SADDR to its VADDR form.
+def getGlobalVaddrOp : InstrMapping {
+  let FilterClass = "GlobalSaddrTable";
+  let RowFields = ["SaddrOp"];
+  let ColFields = ["IsSaddr"];
+  let KeyCol = ["1"];
+  let ValueCols = [["0"]];
+}
+
 // Maps a v_cmpx opcode with sdst to opcode without sdst.
 def getVCMPXNoSDstOp : InstrMapping {
   let FilterClass = "VCMPXNoSDstTable";
@@ -2550,6 +2547,14 @@ def getFlatScratchInstSSfromSV : InstrMapping {
   let ColFields = ["Mode"];
   let KeyCol = ["SV"];
   let ValueCols = [["SS"]];
+}
+
+def getFlatScratchInstSVfromSS : InstrMapping {
+  let FilterClass = "FlatScratchInst";
+  let RowFields = ["SVOp"];
+  let ColFields = ["Mode"];
+  let KeyCol = ["SS"];
+  let ValueCols = [["SV"]];
 }
 
 include "SIInstructions.td"

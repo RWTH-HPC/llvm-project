@@ -1,4 +1,4 @@
-// RUN: mlir-opt %s -convert-scf-to-std -convert-vector-to-llvm -convert-std-to-llvm | \
+// RUN: mlir-opt %s -convert-scf-to-std -convert-vector-to-llvm -convert-memref-to-llvm -convert-std-to-llvm | \
 // RUN: mlir-cpu-runner -e entry -entry-point-result=void \
 // RUN:   -shared-libs=%mlir_integration_test_dir/libmlir_c_runner_utils%shlibext | \
 // RUN: FileCheck %s
@@ -26,11 +26,11 @@ func @entry() {
   %c0 = constant 0: index
   %c1 = constant 1: index
   %c16 = constant 16: index
-  %A = alloc(%c16) : memref<?xf32>
+  %A = memref.alloc(%c16) : memref<?xf32>
   scf.for %i = %c0 to %c16 step %c1 {
     %i32 = index_cast %i : index to i32
     %fi = sitofp %i32 : i32 to f32
-    store %fi, %A[%i] : memref<?xf32>
+    memref.store %fi, %A[%i] : memref<?xf32>
   }
 
   // Set up pass thru vector.
