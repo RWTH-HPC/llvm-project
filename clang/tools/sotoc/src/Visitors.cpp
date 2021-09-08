@@ -33,6 +33,13 @@
 #include "TargetCodeFragment.h"
 #include "Visitors.h"
 
+/**
+ * \brief Determine whether a statement needs a semicolon
+ *
+ * \param S Statement to check
+ * \return true If a semicolon is needed
+ * \return false If no semicolon is needed
+ */
 static bool stmtNeedsSemicolon(const clang::Stmt *S) {
   while (1) {
     if (auto *CS = llvm::dyn_cast<clang::CapturedStmt>(S)) {
@@ -50,6 +57,13 @@ static bool stmtNeedsSemicolon(const clang::Stmt *S) {
   return true;
 }
 
+/**
+ * \brief Traverse declarations
+ *
+ * \param D Declaration to traverse
+ * \return true While traversing
+ * \return false If NULL
+ */
 bool FindTargetCodeVisitor::TraverseDecl(clang::Decl *D) {
   if (!D) return false;
   if (auto *FD = llvm::dyn_cast<clang::FunctionDecl>(D)) {
@@ -62,6 +76,12 @@ bool FindTargetCodeVisitor::TraverseDecl(clang::Decl *D) {
   return ret;
 }
 
+/**
+ * \brief Visit function for statements
+ * Statement visitor in the FindTargetCodeVisitor.
+ *
+ * \param S Given statement
+ */
 bool FindTargetCodeVisitor::VisitStmt(clang::Stmt *S) {
   if (auto *TD = llvm::dyn_cast<clang::OMPTargetDirective>(S)) {
     processTargetRegion(TD);
@@ -98,6 +118,10 @@ bool FindTargetCodeVisitor::VisitStmt(clang::Stmt *S) {
   return true;
 }
 
+/**
+ * \brief OMP clause visitor
+ *
+ */
 class CollectOMPClauseParamsVarsVisitor
     : public clang::RecursiveASTVisitor<CollectOMPClauseParamsVarsVisitor> {
   std::shared_ptr<TargetCodeRegion> TCR;
@@ -115,6 +139,10 @@ public:
   };
 };
 
+/**
+ * \brief OMP clause parameter visitor
+ *
+ */
 class CollectOMPClauseParamsVisitor
     : public clang::RecursiveASTVisitor<CollectOMPClauseParamsVisitor> {
 
@@ -145,6 +173,11 @@ public:
   };
 };
 
+/**
+ * \brief Process the target region
+ *
+ * \param TargetDirective Target directive
+ */
 bool FindTargetCodeVisitor::processTargetRegion(
     clang::OMPExecutableDirective *TargetDirective) {
   // TODO: Not sure why to iterate the children, because I think there
@@ -183,6 +216,13 @@ bool FindTargetCodeVisitor::processTargetRegion(
   return true;
 }
 
+/**
+ * \brief Add target region arguments
+ *
+ * \param S
+ * \param TargetDirective
+ * \param TCR
+ */
 void FindTargetCodeVisitor::addTargetRegionArgs(
     clang::CapturedStmt *S, clang::OMPExecutableDirective *TargetDirective,
     std::shared_ptr<TargetCodeRegion> TCR) {
@@ -218,6 +258,12 @@ void FindTargetCodeVisitor::addTargetRegionArgs(
   TCR->setPrivateVars(VarSet);
 }
 
+/**
+ * \brief Visit funtion for declarations
+ * Declaration Visitor in the FindTargetCodeVisitor
+ *
+ * \param D Given declaration
+ */
 bool FindTargetCodeVisitor::VisitDecl(clang::Decl *D) {
   auto *FD = llvm::dyn_cast<clang::FunctionDecl>(D);
   if (FD) {
@@ -243,6 +289,12 @@ bool FindTargetCodeVisitor::VisitDecl(clang::Decl *D) {
   return true;
 }
 
+/**
+ * \brief Visit function for statements
+ * Statement Visitor for the FindLoopStmtVisitor
+ *
+ * \param S Given statement
+ */
 bool FindLoopStmtVisitor::VisitStmt(clang::Stmt *S) {
   if (auto LS = llvm::dyn_cast<clang::ForStmt>(S)) {
     FindDeclRefVisitor.TraverseStmt(LS->getInit());
@@ -250,7 +302,12 @@ bool FindLoopStmtVisitor::VisitStmt(clang::Stmt *S) {
   return true;
 }
 
-
+/**
+ * \brief Visit function for statements
+ * Statement Visitor for the FindDeclRefExprVisitor
+ *
+ * \param S Given statement
+ */
 bool FindDeclRefExprVisitor::VisitStmt(clang::Stmt *S) {
   if (auto DRE = llvm::dyn_cast<clang::DeclRefExpr>(S)) {
     if (auto DD = llvm::dyn_cast<clang::DeclaratorDecl>(DRE->getDecl())) {
@@ -264,6 +321,12 @@ bool FindDeclRefExprVisitor::VisitStmt(clang::Stmt *S) {
   return true;
 }
 
+/**
+ * \brief Visit function for declaration
+ * Declaration Visitor for the DiscoverTypesInDeclVisitor
+ *
+ * \param D Given declaration
+ */
 bool DiscoverTypesInDeclVisitor::VisitDecl(clang::Decl *D) {
   if (auto *VD = llvm::dyn_cast<clang::ValueDecl>(D)) {
     if (const clang::Type *TP = VD->getType().getTypePtrOrNull()) {
@@ -273,6 +336,12 @@ bool DiscoverTypesInDeclVisitor::VisitDecl(clang::Decl *D) {
   return true;
 }
 
+/**
+ * \brief Visit function for expressions
+ * Expression Visitor for DiscoverTypesInDeclVisitor
+ *
+ * \param E Given expression
+ */
 bool DiscoverTypesInDeclVisitor::VisitExpr(clang::Expr *E) {
   if (auto *DRE = llvm::dyn_cast<clang::DeclRefExpr>(E)) {
     if (auto *ECD = llvm::dyn_cast<clang::EnumConstantDecl>(DRE->getDecl())) {
@@ -289,11 +358,23 @@ bool DiscoverTypesInDeclVisitor::VisitExpr(clang::Expr *E) {
   return true;
 }
 
+/**
+ * \brief Visit function for types
+ * Type Visitor for DiscoverTypesInDeclVisitor
+ *
+ * \param T Given Type
+ */
 bool DiscoverTypesInDeclVisitor::VisitType(clang::Type *T) {
   processType(T);
   return true;
 }
 
+/**
+ * \brief Processing function for types
+ * Processes types found by the DiscoverTypesInDeclVisitor
+ *
+ * \param TP
+ */
 void DiscoverTypesInDeclVisitor::processType(const clang::Type *TP) {
   if (const clang::TypedefType *TDT = TP->getAs<clang::TypedefType>()) {
     OnEachTypeRef(TDT->getDecl());
@@ -302,11 +383,21 @@ void DiscoverTypesInDeclVisitor::processType(const clang::Type *TP) {
   }
 }
 
+/**
+ * \brief Construct a new Discover Types In Decl Visitor:: Discover Types In Decl Visitor object
+ *
+ * \param Types
+ */
 DiscoverTypesInDeclVisitor::DiscoverTypesInDeclVisitor(
     TypeDeclResolver &Types) {
   OnEachTypeRef = [&Types](clang::Decl *D) { Types.addDecl(D); };
 }
 
+/**
+ * \brief Construct a new Discover Functions In Decl Visitor:: Discover Functions In Decl Visitor object
+ *
+ * \param Functions
+ */
 DiscoverFunctionsInDeclVisitor::DiscoverFunctionsInDeclVisitor(
     FunctionDeclResolver &Functions) {
   OnEachFuncRef = [&Functions](clang::FunctionDecl *FD) {
@@ -314,6 +405,12 @@ DiscoverFunctionsInDeclVisitor::DiscoverFunctionsInDeclVisitor(
   };
 }
 
+/**
+ * \brief Visit function for Expressions
+ * Expression Visitor in DiscoverFunctionsInDeclVisitor
+ *
+ * \param E Given expression
+ */
 bool DiscoverFunctionsInDeclVisitor::VisitExpr(clang::Expr *E) {
   clang::DeclRefExpr *DRE = llvm::dyn_cast<clang::DeclRefExpr>(E);
   if (DRE != nullptr) {
@@ -330,6 +427,12 @@ bool DiscoverFunctionsInDeclVisitor::VisitExpr(clang::Expr *E) {
   return true;
 }
 
+/**
+ * \brief Visit function for Expressions
+ * Expression Visitor in FindArraySectionVisitor
+ *
+ * \param E Given expression
+ */
 bool FindArraySectionVisitor::VisitExpr(clang::Expr *E) {
   if (auto *ASE = llvm::dyn_cast<clang::OMPArraySectionExpr>(E)) {
     clang::Expr *Base = ASE->getBase();
@@ -362,6 +465,12 @@ bool FindArraySectionVisitor::VisitExpr(clang::Expr *E) {
   return true;
 }
 
+/**
+ * \brief Visit function for Expressions
+ * Expression Visitor in FindPrivateVariablesVisitor
+ *
+ * \param E Given expression
+ */
 bool FindPrivateVariablesVisitor::VisitExpr(clang::Expr *E) {
   if (auto *DRE = llvm::dyn_cast<clang::DeclRefExpr>(E)) {
     if (auto *VD = llvm::dyn_cast<clang::VarDecl>(DRE->getDecl())) {
