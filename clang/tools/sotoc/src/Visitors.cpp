@@ -78,6 +78,7 @@ bool FindTargetCodeVisitor::TraverseDecl(clang::Decl *D) {
 
 /**
  * \brief Visit function for statements
+ *
  * Statement visitor in the FindTargetCodeVisitor.
  *
  * \param S Given statement
@@ -259,7 +260,8 @@ void FindTargetCodeVisitor::addTargetRegionArgs(
 }
 
 /**
- * \brief Visit funtion for declarations
+ * \brief Visit function for declarations
+ *
  * Declaration Visitor in the FindTargetCodeVisitor
  *
  * \param D Given declaration
@@ -291,6 +293,7 @@ bool FindTargetCodeVisitor::VisitDecl(clang::Decl *D) {
 
 /**
  * \brief Visit function for statements
+ *
  * Statement Visitor for the FindLoopStmtVisitor
  *
  * \param S Given statement
@@ -304,6 +307,7 @@ bool FindLoopStmtVisitor::VisitStmt(clang::Stmt *S) {
 
 /**
  * \brief Visit function for statements
+ *
  * Statement Visitor for the FindDeclRefExprVisitor
  *
  * \param S Given statement
@@ -323,6 +327,7 @@ bool FindDeclRefExprVisitor::VisitStmt(clang::Stmt *S) {
 
 /**
  * \brief Visit function for declaration
+ *
  * Declaration Visitor for the DiscoverTypesInDeclVisitor
  *
  * \param D Given declaration
@@ -338,6 +343,7 @@ bool DiscoverTypesInDeclVisitor::VisitDecl(clang::Decl *D) {
 
 /**
  * \brief Visit function for expressions
+ *
  * Expression Visitor for DiscoverTypesInDeclVisitor
  *
  * \param E Given expression
@@ -360,6 +366,7 @@ bool DiscoverTypesInDeclVisitor::VisitExpr(clang::Expr *E) {
 
 /**
  * \brief Visit function for types
+ *
  * Type Visitor for DiscoverTypesInDeclVisitor
  *
  * \param T Given Type
@@ -371,6 +378,7 @@ bool DiscoverTypesInDeclVisitor::VisitType(clang::Type *T) {
 
 /**
  * \brief Processing function for types
+ *
  * Processes types found by the DiscoverTypesInDeclVisitor
  *
  * \param TP
@@ -407,6 +415,7 @@ DiscoverFunctionsInDeclVisitor::DiscoverFunctionsInDeclVisitor(
 
 /**
  * \brief Visit function for Expressions
+ *
  * Expression Visitor in DiscoverFunctionsInDeclVisitor
  *
  * \param E Given expression
@@ -429,6 +438,7 @@ bool DiscoverFunctionsInDeclVisitor::VisitExpr(clang::Expr *E) {
 
 /**
  * \brief Visit function for Expressions
+ *
  * Expression Visitor in FindArraySectionVisitor
  *
  * \param E Given expression
@@ -467,6 +477,7 @@ bool FindArraySectionVisitor::VisitExpr(clang::Expr *E) {
 
 /**
  * \brief Visit function for Expressions
+ *
  * Expression Visitor in FindPrivateVariablesVisitor
  *
  * \param E Given expression

@@ -22,6 +22,7 @@ int ClauseParamCounter = -1;
 
 /**
  * \brief Print replacement pragmas
+ *
  * In some cases we have to modify the printed pragma.
  * If we have a combined constructs with target, remove target because we are already running on the target device.
  * If we have a combined construct with teams, remove teams because the runtime can decide to spawn only a single team.
@@ -111,6 +112,7 @@ bool OmpPragma::needsAdditionalPragma(
 
 /**
  * \brief Determine whether a clause is printable
+ *
  * Checks for a clause the clause kind and determines which clauses are printable.
  *
  * \param Clause Clause to check
@@ -421,8 +423,10 @@ void OmpPragma::printClauses(llvm::raw_ostream &Out) {
 
 /**
  * \brief Rewrite clause parameters
+ *
  * Rewrites OMP clause parameters if they are variables to replace the variable name
  * with the one we will use as the function argument.
+ *
  * \param In Parameter as string (everything in brackets)
  */
 void OmpPragma::rewriteParam(std::string *In) {

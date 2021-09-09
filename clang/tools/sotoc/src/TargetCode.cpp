@@ -34,6 +34,14 @@
 #include "OmpPragma.h"
 #include "TargetCode.h"
 
+/**
+ * \brief Adds a code fragment
+ *
+ * Adds a TargetCodeFragment to Target Code
+ *
+ * \param Frag Target code fragment to add
+ * \param PushFront Whether to push it to the front or the back
+ */
 bool TargetCode::addCodeFragment(std::shared_ptr<TargetCodeFragment> Frag,
                                  bool PushFront) {
   for (auto &F : CodeFragments) {
@@ -57,11 +65,19 @@ bool TargetCode::addCodeFragment(std::shared_ptr<TargetCodeFragment> Frag,
   return true;
 }
 
+// TODO: Is this needed for something?
 bool TargetCode::addCodeFragmentFront(
     std::shared_ptr<TargetCodeFragment> Frag) {
   return addCodeFragment(Frag, true);
 }
 
+/**
+ * \brief Generate target code
+ *
+ * Generates the actual target code
+ *
+ * \param Out Out stream
+ */
 void TargetCode::generateCode(llvm::raw_ostream &Out) {
 
   bool stdlib = false;
@@ -81,6 +97,7 @@ void TargetCode::generateCode(llvm::raw_ostream &Out) {
     }
   }
 
+  // Add extra libs for the debugging helper function
   if (!stdlib && std::atoi(llvm::sys::Process::GetEnv("NEC_TARGET_DELAY")
                                .getValueOr("0")
                                .c_str())) {
@@ -123,6 +140,14 @@ void TargetCode::generateCode(llvm::raw_ostream &Out) {
   Out << "#undef omp_get_thread_limit\n";
 }
 
+/**
+ * \brief Generate function arguments
+ *
+ * Generates the argument list for the target function.
+ *
+ * \param Arg Argument
+ * \param Out Out stream
+ */
 void TargetCode::generateArgument(const TargetRegionVariable &Arg,
                                   llvm::raw_ostream &Out) {
   std::string LHSStore;
@@ -145,11 +170,12 @@ void TargetCode::generateArgument(const TargetRegionVariable &Arg,
 }
 
 /**
- * \brief Generate the variable declaration of a transferred variable.
+ * \brief Generate the variable declaration of a transferred variable
  *
  * Generate the variable declaration (including setting the variable to the
  * proper value) of a transferred variable and print it to the specified output
  * stream.
+ *
  * \param Var The variable for which to print the declaration
  * \param Out The output stream to which to write the variable declaration
  */
@@ -220,6 +246,15 @@ void TargetCode::generateVariableDecl(const TargetRegionVariable &Var,
   Out << "  " << lValueStore << " = " << rValueStore << ";\n";
 }
 
+/**
+ * \brief Generate function prologue
+ *
+ * Generates everything that comes before the actual target code,
+ * like the function head, local variables and helper functions.
+ *
+ * \param TCR Code region
+ * \param Out Out stream
+ */
 void TargetCode::generateFunctionPrologue(TargetCodeRegion *TCR,
                                           llvm::raw_ostream &Out) {
   bool first = true;
@@ -335,6 +370,15 @@ void TargetCode::generateFunctionPrologue(TargetCodeRegion *TCR,
   Out << "\n";
 }
 
+/**
+ * \brief Generate function epilogue
+ *
+ * Generates everything that comes after the actual target code,
+ * like '}' and scalar copies.
+ *
+ * \param TCR Target code
+ * \param Out Out stream
+ */
 void TargetCode::generateFunctionEpilogue(TargetCodeRegion *TCR,
                                           llvm::raw_ostream &Out) {
   if (OmpPragma(TCR).needsStructuredBlock()) {
@@ -355,6 +399,12 @@ void TargetCode::generateFunctionEpilogue(TargetCodeRegion *TCR,
   Out << "\n}\n";
 }
 
+/**
+ * \brief Generates function name
+ *
+ * \param TCR Target code region
+ * \return std::string Function name
+ */
 std::string TargetCode::generateFunctionName(TargetCodeRegion *TCR) {
   // TODO: this function needs error handling
   llvm::sys::fs::UniqueID ID;
