@@ -18,6 +18,12 @@
 
 #include "TargetRegionVariable.h"
 
+/**
+ * \brief Construct a new Target Region Variable:: Target Region Variable object
+ *
+ * \param Capture
+ * \param MappingLowerBounds
+ */
 TargetRegionVariable::TargetRegionVariable(
     const clang::CapturedStmt::Capture *Capture,
     const std::map<clang::VarDecl *, clang::Expr *> &MappingLowerBounds)
@@ -29,6 +35,13 @@ TargetRegionVariable::TargetRegionVariable(
   determineShapes(Decl->getType());
 }
 
+/**
+ * \brief Determine variable shape
+ *
+ * Determines the shape of a varable by resolving its type.
+ *
+ * \param T Type
+ */
 void TargetRegionVariable::determineShapes(const clang::QualType T) {
   // We want to determine the shapes of this variable from it's qualifiers
   if (const auto *AT = llvm::dyn_cast<clang::ArrayType>(T.getTypePtr())) {
@@ -46,7 +59,7 @@ void TargetRegionVariable::determineShapes(const clang::QualType T) {
     NumVariableArrayDims++;
     return determineShapes(AT->getElementType());
   } else if (auto *PT = llvm::dyn_cast<clang::PointerType>(T.getTypePtr())) {
-    // Poniters are easy: just record that we have a pointer (default constructed)
+    // Pointers are easy: just record that we have a pointer (default constructed)
     Shapes.push_back(TargetRegionVariableShape());
     return determineShapes(PT->getPointeeType());
   } else if (auto *PT = llvm::dyn_cast<clang::ParenType>(T.getTypePtr())) {
@@ -91,6 +104,13 @@ bool TargetRegionVariable::containsPointer() const {
   return false;
 }
 
+//TODO: We might not need this anymore
+/**
+ * \brief Determines whether a variable is passed by pointer
+ *
+ * \return true If a variable is passed by pointer
+ * \return false If a variable is not passed by pointer
+ */
 bool TargetRegionVariable::passedByPointer() const {
   if (containsArray() || containsPointer()) {
     // Arrays are always passed by pointer
@@ -99,6 +119,11 @@ bool TargetRegionVariable::passedByPointer() const {
   return Capture->capturesVariable();
 }
 
+/**
+ * \brief Finds the lower bound of an array
+ *
+ * \return llvm::Optional<clang::Expr *> Lower bound
+ */
 llvm::Optional<clang::Expr *> TargetRegionVariable::arrayLowerBound() const {
   auto FindBound = OmpMappingLowerBound.find(Decl);
   if (FindBound != OmpMappingLowerBound.cend()) {

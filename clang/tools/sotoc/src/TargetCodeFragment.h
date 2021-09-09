@@ -186,7 +186,7 @@ public:
   clang::SourceRange getInnerRange() override;
   clang::SourceRange getSpellingRange() override;
   /// Returns a source location at the start of a pragma in the captured
-  /// statment.
+  /// statement.
   clang::SourceLocation getStartLoc();
   clang::SourceLocation getEndLoc();
   /// Returns the name of the function in which the target region is declared.

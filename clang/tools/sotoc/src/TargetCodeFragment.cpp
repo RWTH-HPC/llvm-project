@@ -30,10 +30,26 @@
 #include "OmpPragma.h"
 #include "TargetCodeFragment.h"
 
+/**
+ * \brief Add capture
+ *
+ * This will automatically create and save a \ref TargetRegionVariable
+ * which holds all information to generate parameters for the generated
+ * target region function.
+ *
+ * \param Capture Captures element
+ */
 void TargetCodeRegion::addCapture(const clang::CapturedStmt::Capture *Capture) {
   CapturedVars.push_back(TargetRegionVariable(Capture, CapturedLowerBounds));
 }
 
+/**
+ * \brief Add OMP clause parameters
+ *
+ * Adds OMP clause paramenters to a TargetCodeRegion
+ *
+ * \param Param Parameter
+ */
 void TargetCodeRegion::addOMPClauseParam(clang::VarDecl *Param) {
   for (auto &CV : capturedVars()) {
     if (CV.getDecl() == Param) {
@@ -49,10 +65,26 @@ void TargetCodeRegion::addOMPClauseParam(clang::VarDecl *Param) {
   OMPClausesParams.push_back(Param);
 }
 
+/**
+ * \brief Add OMP clauses
+ *
+ * Adds a (top level) OpenMP clause for the target region.
+ * These clauses are later used to determine which OpenMP #pragma needs to be
+ * generated at the top level of the target region function.
+ *
+ * \param Clause OMP Clause
+ */
 void TargetCodeRegion::addOMPClause(clang::OMPClause *Clause) {
   OMPClauses.push_back(Clause);
 }
 
+/**
+ * \brief Determine whether a region has a compound statement
+ *
+ * \param S Statement (region)
+ * \return true If the region has a compound statement
+ * \return false If the region does not have a compound statement
+ */
 static bool hasRegionCompoundStmt(const clang::Stmt *S) {
   if (const auto *SS = llvm::dyn_cast<clang::CapturedStmt>(S)) {
     if (llvm::isa<clang::CompoundStmt>(SS->getCapturedStmt())) {
@@ -64,6 +96,13 @@ static bool hasRegionCompoundStmt(const clang::Stmt *S) {
   return false;
 }
 
+/**
+ * \brief Determine whether a region has a OMP statement
+ *
+ * \param S Statement (region)
+ * \return true If the region has a OMP statement
+ * \return false If the region does not have a OMP statement
+ */
 static bool hasRegionOMPStmt(const clang::Stmt *S) {
   if (const auto *SS = llvm::dyn_cast<clang::CapturedStmt>(S)) {
     if (llvm::isa<clang::OMPExecutableDirective>(SS->getCapturedStmt())) {
@@ -75,6 +114,12 @@ static bool hasRegionOMPStmt(const clang::Stmt *S) {
   return false;
 }
 
+/**
+ * \brief Get the end a OMP stmt source
+ *
+ * \param S Statement
+ * \return clang::SourceLocation Location of the end
+ */
 static clang::SourceLocation getOMPStmtSourceLocEnd(const clang::Stmt *S) {
   while (auto *CS = llvm::dyn_cast<clang::CapturedStmt>(S)) {
     S = CS->getCapturedStmt();
@@ -90,7 +135,15 @@ static clang::SourceLocation getOMPStmtSourceLocEnd(const clang::Stmt *S) {
   return S->getEndLoc();
 }
 
-// TODO: Implement recursiv for an arbitrary depth?
+// TODO: Implement recursive for an arbitrary depth?
+/**
+ * \brief Find previous token
+ *
+ * \param Loc Source Location
+ * \param SM Source Manager
+ * \param LO Language options
+ * \return clang::SourceLocation Previous token
+ */
 static clang::SourceLocation findPreviousToken(clang::SourceLocation Loc,
                                                clang::SourceManager &SM,
                                                const clang::LangOptions &LO) {
@@ -107,8 +160,17 @@ static clang::SourceLocation findPreviousToken(clang::SourceLocation Loc,
   return token.getLocation();
 }
 
+/**
+ * \brief Destroy the Target Code Fragment:: Target Code Fragment object
+ *
+ */
 TargetCodeFragment::~TargetCodeFragment() {}
 
+/**
+ * \brief Returns a source location at the start of a pragma in the captured statement
+ *
+ * \return clang::SourceLocation Start location
+ */
 clang::SourceLocation TargetCodeRegion::getStartLoc() {
   clang::SourceManager &SM = Context.getSourceManager();
   const clang::LangOptions &LO = Context.getLangOpts();
@@ -119,7 +181,7 @@ clang::SourceLocation TargetCodeRegion::getStartLoc() {
 #if 0
     // This piece of code could be used to check if we start with a new scope.
     // However, the pretty printer destroys this again somehow...
-    // Since the extra scope does not realy hurt, i will leave it as it is for now.
+    // Since the extra scope does not really hurt, i will leave it as it is for now.
     clang::Token token;
     if(!(clang::Lexer::getRawToken(TokenBegin, token, SM, LO))) {
       if (token.is(clang::tok::l_brace)) {
@@ -146,13 +208,18 @@ clang::SourceLocation TargetCodeRegion::getStartLoc() {
   }
 }
 
+/**
+ * \brief Get end location
+ *
+ * \return clang::SourceLocation End location
+ */
 clang::SourceLocation TargetCodeRegion::getEndLoc() {
   clang::SourceManager &SM = Context.getSourceManager();
   const clang::LangOptions &LO = Context.getLangOpts();
   auto N = CapturedStmtNode;
   if (hasRegionCompoundStmt(N)) {
     return clang::Lexer::GetBeginningOfToken(N->getEndLoc(), SM, LO)
-        .getLocWithOffset(-1); // TODO: If I set this to"1" it works too. I
+        .getLocWithOffset(-1); // TODO: If I set this to "1" it works too. I
                                // think it was here to remove addition scope
                                // which i get with "printPretty". Does this
                                // need some fixing?
@@ -163,18 +230,42 @@ clang::SourceLocation TargetCodeRegion::getEndLoc() {
   }
 }
 
+/**
+ * \brief Returns the name of the function in which the target region is declared.
+ *
+ * \return const std::string
+ */
 const std::string TargetCodeRegion::getParentFuncName() {
   return ParentFunctionDecl->getNameInfo().getAsString();
 }
 
+/**
+ * \brief Get target directive location
+ *
+ * Returns the SourceLocation for the target directive (we need the source
+ * location of the first pragma of the target region to compose the name of
+ * the function generated for that region)
+ *
+ * \return clang::SourceLocation Location
+ */
 clang::SourceLocation TargetCodeRegion::getTargetDirectiveLocation() {
   return TargetDirective->getBeginLoc();
 }
 
+/**
+ * \brief Get source range
+ *
+ * \return clang::SourceRange
+ */
 clang::SourceRange TargetCodeRegion::getRealRange() {
   return CapturedStmtNode->getSourceRange();
 }
 
+/**
+ * \brief Get spelling range
+ *
+ * \return clang::SourceRange
+ */
 clang::SourceRange TargetCodeRegion::getSpellingRange() {
   auto &SM =
       CapturedStmtNode->getCapturedDecl()->getASTContext().getSourceManager();
@@ -183,17 +274,37 @@ clang::SourceRange TargetCodeRegion::getSpellingRange() {
                             SM.getSpellingLoc(InnerRange.getEnd()));
 }
 
+/**
+ * \brief Get inner range
+ *
+ * \return clang::SourceRange
+ */
 clang::SourceRange TargetCodeRegion::getInnerRange() {
   auto InnerLocStart = getStartLoc();
   auto InnerLocEnd = getEndLoc();
   return clang::SourceRange(InnerLocStart, InnerLocEnd);
 }
 
+/**
+ * \brief Print Helper Class
+ *
+ */
 class TargetRegionPrinterHelper : public clang::PrinterHelper {
   clang::PrintingPolicy PP;
 
 public:
+  /**
+   * \brief Construct a new Target Region Printer Helper object
+   *
+   * \param PP
+   */
   TargetRegionPrinterHelper(clang::PrintingPolicy PP) : PP(PP){};
+  /**
+   * \brief Handle Statement
+   *
+   * \param E Statement
+   * \param OS Out stream
+   */
   bool handledStmt(clang::Stmt *E, llvm::raw_ostream &OS) {
     if (auto *Directive = llvm::dyn_cast<clang::OMPExecutableDirective>(E)) {
       if (OmpPragma::isReplaceable(Directive)) {
@@ -213,8 +324,12 @@ public:
   }
 };
 
+/**
+ * \brief Do pretty printing in order to resolve Macros
+ *
+ * \return std::string Pretty output
+ */
 std::string TargetCodeRegion::PrintPretty() {
-  // Do pretty printing in order to resolve Macros.
   // TODO: Is there a better approach (e.g., token or preprocessor based?)
   // One issue here: Addition braces (i.e., scope) in some cases.
   std::string PrettyStr = "";
@@ -225,10 +340,20 @@ std::string TargetCodeRegion::PrintPretty() {
   return PrettyOS.str();
 }
 
+/**
+ * \brief Get source range
+ *
+ * \return clang::SourceRange
+ */
 clang::SourceRange TargetCodeDecl::getRealRange() {
   return DeclNode->getSourceRange();
 }
 
+/**
+ * \brief Get spelling range
+ *
+ * \return clang::SourceRange
+ */
 clang::SourceRange TargetCodeDecl::getSpellingRange() {
   auto &SM = DeclNode->getASTContext().getSourceManager();
   auto InnerRange = getInnerRange();
@@ -236,6 +361,11 @@ clang::SourceRange TargetCodeDecl::getSpellingRange() {
                             SM.getSpellingLoc(InnerRange.getEnd()));
 }
 
+/**
+ * \brief Do pretty printing
+ *
+ * \return std::string Pretty output
+ */
 std::string TargetCodeDecl::PrintPretty() {
   std::string PrettyStr = "";
   llvm::raw_string_ostream PrettyOS(PrettyStr);
