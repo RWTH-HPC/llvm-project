@@ -20,8 +20,16 @@
 
 int ClauseParamCounter = -1;
 
+/**
+ * \brief Print replacement pragmas
+ * In some cases we have to modify the printed pragma.
+ * If we have a combined constructs with target, remove target because we are already running on the target device.
+ * If we have a combined construct with teams, remove teams because the runtime can decide to spawn only a single team.
+ * If we have a simd, we prepend `#pragma _NEC ivdep` to indicate no dependencies.
+ *
+ * \param Out Out stream
+ */
 void OmpPragma::printReplacement(llvm::raw_ostream &Out) {
-
   switch (Kind) {
   case clang::OpenMPDirectiveKind::OMPD_target_parallel: {
     Out << "  #pragma omp parallel ";
@@ -59,10 +67,18 @@ void OmpPragma::printReplacement(llvm::raw_ostream &Out) {
   printClauses(Out);
 }
 
+//TODO: Do we need this?
 void OmpPragma::printAddition(llvm::raw_ostream &Out) {
   Out << "  #pragma _NEC ivdep ";
 }
 
+/**
+ * \brief Determines whether a pragma is replacable
+ *
+ * \param Directive Given Directive
+ * \return true If the directive is replacable
+ * \return false If the directive is not replacable
+ */
 bool OmpPragma::isReplaceable(clang::OMPExecutableDirective *Directive) {
   if (llvm::isa<clang::OMPTeamsDirective>(Directive) ||
       llvm::isa<clang::OMPTeamsDistributeDirective>(Directive) ||
@@ -75,6 +91,13 @@ bool OmpPragma::isReplaceable(clang::OMPExecutableDirective *Directive) {
   return false;
 }
 
+/**
+ * \brief Determines whether a additional pragma is needed
+ *
+ * \param Directive given directive
+ * \return true Directive needs an additional pragma
+ * \return false Directive does not need an additional pragma
+ */
 bool OmpPragma::needsAdditionalPragma(
     clang::OMPExecutableDirective *Directive) {
   if (llvm::isa<clang::OMPForSimdDirective>(Directive) ||
@@ -86,6 +109,14 @@ bool OmpPragma::needsAdditionalPragma(
   return false;
 }
 
+/**
+ * \brief Determine whether a clause is printable
+ * Checks for a clause the clause kind and determines which clauses are printable.
+ *
+ * \param Clause Clause to check
+ * \return true If the clause is printable
+ * \return false If the clause is not printable
+ */
 bool OmpPragma::isClausePrintable(clang::OMPClause *Clause) {
   switch (Kind) {
   case clang::OpenMPDirectiveKind::OMPD_target: {
@@ -334,6 +365,11 @@ bool OmpPragma::isClausePrintable(clang::OMPClause *Clause) {
   return false;
 }
 
+/**
+ * \brief Print OMP Clauses
+ *
+ * \param Out Out stream
+ */
 void OmpPragma::printClauses(llvm::raw_ostream &Out) {
   std::string InString;
   llvm::raw_string_ostream In(InString);
@@ -383,6 +419,12 @@ void OmpPragma::printClauses(llvm::raw_ostream &Out) {
   }
 }
 
+/**
+ * \brief Rewrite clause parameters
+ * Rewrites OMP clause parameters if they are variables to replace the variable name
+ * with the one we will use as the function argument.
+ * \param In Parameter as string (everything in brackets)
+ */
 void OmpPragma::rewriteParam(std::string *In) {
   bool isNumerical = true;
 
@@ -398,6 +440,12 @@ void OmpPragma::rewriteParam(std::string *In) {
   }
 }
 
+/**
+ * \brief Determines whether a structured block is needed for a pragma
+ *
+ * \return true If a structured block is needed
+ * \return false If no structured block is needed
+ */
 bool OmpPragma::needsStructuredBlock() {
   switch (Kind) {
   case clang::OpenMPDirectiveKind::OMPD_target_parallel:
