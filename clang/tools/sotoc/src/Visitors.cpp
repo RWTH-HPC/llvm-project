@@ -45,7 +45,7 @@ static bool stmtNeedsSemicolon(const clang::Stmt *S) {
     if (auto *CS = llvm::dyn_cast<clang::CapturedStmt>(S)) {
       S = CS->getCapturedStmt();
     } else if (auto *OS = llvm::dyn_cast<clang::OMPExecutableDirective>(S)) {
-      S = OS->getInnermostCapturedStmt();
+      S = OS->getRawStmt(); //->getInnermostCapturedStmt(); https://reviews.llvm.org/rGfbd6d2c54e57a4968d29bb22742dd49759b3ecd0
     } else {
       break;
     }
