@@ -14,6 +14,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "clang/AST/PrettyPrinter.h"
+#include "clang/Basic/OpenMPKinds.h"
 #include <ctype.h>
 
 #include "OmpPragma.h"
@@ -24,11 +25,16 @@ int ClauseParamCounter = -1;
  * \brief Print replacement pragmas
  *
  * In some cases we have to modify the printed pragma.
- * If we have a combined constructs with target, remove target because we are already running on the target device.
- * If we have a combined construct with teams, remove teams because the runtime can decide to spawn only a single team.
- * If we have a simd, we prepend `#pragma _NEC ivdep` to indicate no dependencies.
+ * If we have a combined construct using `target`, remove `target` because we
+ * are already running on the target device.
+ * If we have a combined construct using `teams`, remove `teams` because the
+ * runtime can decide to spawn only a single team.
+ * If we have a combined construct using `distribute`, remove `distribute`
+ * because it can only be part of a teams directive and we only use one team.
+ * If we have a `simd` (either alone or in a combined construct), prepend
+ * `#pragma _NEC ivdep` to indicate to `ncc` that there are no dependencies.
  *
- * \param Out Out stream
+ * \param Out Output stream
  */
 void OmpPragma::printReplacement(llvm::raw_ostream &Out) {
   switch (Kind) {
@@ -36,30 +42,26 @@ void OmpPragma::printReplacement(llvm::raw_ostream &Out) {
     Out << "  #pragma omp parallel ";
     break;
   }
+  case clang::OpenMPDirectiveKind::OMPD_target_parallel_for:
+  case clang::OpenMPDirectiveKind::OMPD_distribute_parallel_for:
   case clang::OpenMPDirectiveKind::OMPD_teams_distribute_parallel_for:
-  case clang::OpenMPDirectiveKind::OMPD_target_parallel_for: {
-    Out << "  #pragma omp parallel for ";
-    break;
-  }
-  case clang::OpenMPDirectiveKind::OMPD_teams_distribute_parallel_for_simd:
-  case clang::OpenMPDirectiveKind::OMPD_target_parallel_for_simd: {
-    Out << "  #pragma _NEC ivdep\n  #pragma omp parallel for simd ";
-    break;
-  }
-  case clang::OpenMPDirectiveKind::OMPD_distribute_simd:
-  case clang::OpenMPDirectiveKind::OMPD_teams_distribute_simd:
-  case clang::OpenMPDirectiveKind::OMPD_target_teams_distribute_simd:
-  case clang::OpenMPDirectiveKind::OMPD_target_simd: {
-    Out << "  #pragma _NEC ivdep\n  #pragma omp simd ";
-    break;
-  }
   case clang::OpenMPDirectiveKind::OMPD_target_teams_distribute_parallel_for: {
     Out << "  #pragma omp parallel for ";
     break;
   }
+  case clang::OpenMPDirectiveKind::OMPD_target_parallel_for_simd:
+  case clang::OpenMPDirectiveKind::OMPD_distribute_parallel_for_simd:
+  case clang::OpenMPDirectiveKind::OMPD_teams_distribute_parallel_for_simd:
   case clang::OpenMPDirectiveKind::
-      OMPD_target_teams_distribute_parallel_for_simd: {
+        OMPD_target_teams_distribute_parallel_for_simd: {
     Out << "  #pragma _NEC ivdep\n  #pragma omp parallel for simd ";
+    break;
+  }
+  case clang::OpenMPDirectiveKind::OMPD_target_simd:
+  case clang::OpenMPDirectiveKind::OMPD_distribute_simd:
+  case clang::OpenMPDirectiveKind::OMPD_teams_distribute_simd:
+  case clang::OpenMPDirectiveKind::OMPD_target_teams_distribute_simd: {
+    Out << "  #pragma _NEC ivdep\n  #pragma omp simd ";
     break;
   }
   default:
@@ -81,15 +83,8 @@ void OmpPragma::printAddition(llvm::raw_ostream &Out) {
  * \return false If the directive is not replacable
  */
 bool OmpPragma::isReplaceable(clang::OMPExecutableDirective *Directive) {
-  if (llvm::isa<clang::OMPTeamsDirective>(Directive) ||
-      llvm::isa<clang::OMPTeamsDistributeDirective>(Directive) ||
-      llvm::isa<clang::OMPTeamsDistributeSimdDirective>(Directive) ||
-      llvm::isa<clang::OMPTeamsDistributeParallelForDirective>(Directive) ||
-      llvm::isa<clang::OMPTeamsDistributeParallelForSimdDirective>(Directive) ||
-      llvm::isa<clang::OMPDistributeDirective>(Directive)) {
-    return true;
-  }
-  return false;
+  return (clang::isOpenMPTeamsDirective(Directive->getDirectiveKind()) ||
+      clang::isOpenMPDistributeDirective(Directive->getDirectiveKind()));
 }
 
 /**
