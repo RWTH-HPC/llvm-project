@@ -44,7 +44,7 @@ public:
   OmpPragma(clang::OMPExecutableDirective *Directive, clang::PrintingPolicy PP)
       : PP(PP), Clauses(Directive->clauses()),
         Kind(Directive->getDirectiveKind()), ClauseParamCounter(0) {};
-  /// Returns true if the omp pragma encapsulated, needs to be followed by a
+  /// Returns true if the encapsulated omp pragma needs to be followed by a
   /// structured block (i.e. {...}).
   bool needsStructuredBlock();
   /// Prints a replacement omp pragma for the encapsulated pragma onto \p Out.

@@ -69,6 +69,7 @@ void TargetRegionVariable::determineShapes(const clang::QualType T) {
   } else {
     // We have found the base type (without array dimensions or pointer specifiers).
     BaseTypeName = T.getAsString();
+    BaseTypeIsConst = T.isLocalConstQualified();
   }
 }
 

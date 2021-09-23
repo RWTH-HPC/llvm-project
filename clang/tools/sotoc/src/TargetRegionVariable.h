@@ -177,6 +177,7 @@ private:
   /// This is the base type name, i.e. the name of the type without pointer or
   /// array qualifiers.
   std::string BaseTypeName;
+  bool BaseTypeIsConst;
   std::vector<TargetRegionVariableShape> Shapes;
   unsigned int NumVariableArrayDims;
   void determineShapes(clang::QualType T);
@@ -191,6 +192,8 @@ public:
   };
   /// The Decl node of the variable.
   clang::VarDecl *getDecl() const { return Decl; };
+  /// Whether the base type is const qualified or not
+  bool isBaseTypeConst() const { return BaseTypeIsConst; };
   /// Whether this variable's type contains an array or not
   bool containsArray() const;
   /// Whether this variable's type contains a pointer or not

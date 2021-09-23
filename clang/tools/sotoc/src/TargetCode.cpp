@@ -388,11 +388,9 @@ void TargetCode::generateFunctionEpilogue(TargetCodeRegion *TCR,
   Out << "\n";
   // copy values from scalars from scoped vars back into pointers
   for (auto &Var : TCR->capturedVars()) {
-    if (Var.passedByPointer() &&
+    if (Var.passedByPointer() && !Var.isBaseTypeConst() &&
         !Var.containsPointer() && !Var.containsArray()) {
       Out << "\n  *__sotoc_var_" << Var.name() << " = " << Var.name() << ";";
-    } else if (Var.containsPointer()){
-      Out << "\n  __sotoc_var_" << Var.name() << " = " << Var.name() << ";";
     }
   }
 
