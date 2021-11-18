@@ -257,6 +257,7 @@ StringRef Triple::getEnvironmentTypeName(EnvironmentType Kind) {
   case MuslEABIHF: return "musleabihf";
   case MuslX32: return "muslx32";
   case Simulator: return "simulator";
+  case Sotoc: return "sotoc";
   }
 
   llvm_unreachable("Invalid EnvironmentType!");
@@ -572,6 +573,7 @@ static Triple::EnvironmentType parseEnvironment(StringRef EnvironmentName) {
       .StartsWith("cygnus", Triple::Cygnus)
       .StartsWith("coreclr", Triple::CoreCLR)
       .StartsWith("simulator", Triple::Simulator)
+      .StartsWith("sotoc", Triple::Sotoc)
       .StartsWith("macabi", Triple::MacABI)
       .Default(Triple::UnknownEnvironment);
 }

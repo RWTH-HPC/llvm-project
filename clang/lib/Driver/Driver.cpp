@@ -740,6 +740,14 @@ void Driver::CreateOffloadingDeviceToolChains(Compilation &C,
           llvm::Triple TT(Val);
           std::string NormalizedName = TT.normalize();
 
+          if (!NormalizedName.compare("ve-unknown-unknown-sotoc")) {
+            NormalizedName = "auroa-unknown-unknown-unknown";
+            TT.setArch(llvm::Triple::aurora);
+            TT.setVendor(llvm::Triple::UnknownVendor);
+            TT.setOS(llvm::Triple::UnknownOS);
+            TT.setEnvironment(llvm::Triple::UnknownEnvironment);
+          }
+
           // Make sure we don't have a duplicate triple.
           auto Duplicate = FoundNormalizedTriples.find(NormalizedName);
           if (Duplicate != FoundNormalizedTriples.end()) {
@@ -757,21 +765,9 @@ void Driver::CreateOffloadingDeviceToolChains(Compilation &C,
             Diag(clang::diag::err_drv_invalid_omp_target) << Val;
           else {
             const ToolChain *TC;
-            //MR_MARKER: TODO: use Arch + OS (not Environment)
-            if (TT.getArch() == llvm::Triple::aurora) {
-              const ToolChain *HostTC =
-                C.getSingleOffloadToolChain<Action::OFK_Host>();
-              assert(HostTC && "Host toolchain should be always defined.");
-              auto &AuroraTC =
-                ToolChains[TT.str() + "/" + HostTC->getTriple().normalize()];
-              if (!AuroraTC)
-                AuroraTC = std::make_unique<toolchains::NECAuroraOffloadToolChain>(
-                  *this, TT, *HostTC, C.getInputArgs());
-              TC = AuroraTC.get();
-            }
             // Device toolchains have to be selected differently. They pair host
             // and device in their implementation.
-            else if (TT.isNVPTX() || TT.isAMDGCN()) {
+            if (TT.isNVPTX() || TT.isAMDGCN() || TT.isAurora()) {
               const ToolChain *HostTC =
                   C.getSingleOffloadToolChain<Action::OFK_Host>();
               assert(HostTC && "Host toolchain should be always defined.");
@@ -784,6 +780,10 @@ void Driver::CreateOffloadingDeviceToolChains(Compilation &C,
                 else if (TT.isAMDGCN())
                   DeviceTC =
                       std::make_unique<toolchains::AMDGPUOpenMPToolChain>(
+                          *this, TT, *HostTC, C.getInputArgs());
+                else if (TT.isAurora())
+                  DeviceTC =
+                      std::make_unique<toolchains::NECAuroraOffloadToolChain>(
                           *this, TT, *HostTC, C.getInputArgs());
                 else
                   assert(DeviceTC && "Device toolchain not defined.");
@@ -5303,7 +5303,6 @@ const ToolChain &Driver::getToolChain(const ArgList &Args,
                                                               Args);
       else if (Target.getArch() == llvm::Triple::ve)
         TC = std::make_unique<toolchains::VEToolChain>(*this, Target, Args);
-
       else
         TC = std::make_unique<toolchains::Linux>(*this, Target, Args);
       break;

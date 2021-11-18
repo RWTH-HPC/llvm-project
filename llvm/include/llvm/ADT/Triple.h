@@ -227,6 +227,7 @@ public:
     Itanium,
     Cygnus,
     CoreCLR,
+    Sotoc,
     Simulator, // Simulator variants of other systems, e.g., Apple's iOS
     MacABI, // Mac Catalyst variant of Apple's iOS deployment target.
     LastEnvironmentType = MacABI
@@ -494,6 +495,10 @@ public:
 
   bool isMacCatalystEnvironment() const {
     return getEnvironment() == Triple::MacABI;
+  }
+
+  bool isSotoc() const {
+    return getEnvironment() == Triple::Sotoc;
   }
 
   /// Returns true for targets that run on a macOS machine.
@@ -791,7 +796,9 @@ public:
   bool isVE() const {
     return getArch() == Triple::ve;
   }
-
+  bool isAurora() const {
+    return getArch() == Triple::aurora;
+  }
   /// Tests whether the target is wasm (32- and 64-bit).
   bool isWasm() const {
     return getArch() == Triple::wasm32 || getArch() == Triple::wasm64;
