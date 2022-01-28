@@ -767,7 +767,7 @@ void Driver::CreateOffloadingDeviceToolChains(Compilation &C,
             const ToolChain *TC;
             // Device toolchains have to be selected differently. They pair host
             // and device in their implementation.
-            if (TT.isNVPTX() || TT.isAMDGCN() || TT.isAurora()) {
+            if (TT.isNVPTX() || TT.isAMDGCN() || TT.isVE() || TT.isAurora()) {
               const ToolChain *HostTC =
                   C.getSingleOffloadToolChain<Action::OFK_Host>();
               assert(HostTC && "Host toolchain should be always defined.");
@@ -781,7 +781,7 @@ void Driver::CreateOffloadingDeviceToolChains(Compilation &C,
                   DeviceTC =
                       std::make_unique<toolchains::AMDGPUOpenMPToolChain>(
                           *this, TT, *HostTC, C.getInputArgs());
-                else if (TT.isAurora())
+                else if (TT.isVE() || TT.isAurora())
                   DeviceTC =
                       std::make_unique<toolchains::NECAuroraOffloadToolChain>(
                           *this, TT, *HostTC, C.getInputArgs());
