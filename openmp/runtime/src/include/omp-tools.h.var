@@ -168,7 +168,8 @@
     macro (ompt_callback_target_data_op_emi,ompt_callback_target_data_op_emi_t,34) /* target data op                  */ \
     macro (ompt_callback_target_submit_emi, ompt_callback_target_submit_emi_t, 35) /* target submit                   */ \
     macro (ompt_callback_target_map_emi,    ompt_callback_target_map_emi_t,    36) /* target map                      */ \
-    macro (ompt_callback_error,             ompt_callback_error_t,             37) /* error                           */
+    macro (ompt_callback_error,             ompt_callback_error_t,             37) /* error                           */ \
+    macro (ompt_callback_task_creation,     ompt_callback_task_creation_t,     38) /* task creation begin/end         */
 
 /*****************************************************************************
  * implementation specific types
@@ -222,7 +223,8 @@ typedef enum ompt_callbacks_t {
   ompt_callback_target_data_op_emi       = 34,
   ompt_callback_target_submit_emi        = 35,
   ompt_callback_target_map_emi           = 36,
-  ompt_callback_error                    = 37
+  ompt_callback_error                    = 37,
+  ompt_callback_task_creation            = 38
 } ompt_callbacks_t;
 
 typedef enum ompt_record_t {
@@ -792,6 +794,12 @@ typedef struct ompt_record_task_create_t {
   int has_dependences;
   const void *codeptr_ra;
 } ompt_record_task_create_t;
+
+typedef void (*ompt_callback_task_creation_t) (
+  ompt_scope_endpoint_t endpoint,
+  ompt_data_t *encountering_task_data,
+  ompt_data_t *new_task_data
+);
 
 typedef void (*ompt_callback_dependences_t) (
   ompt_data_t *task_data,

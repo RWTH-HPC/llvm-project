@@ -558,9 +558,10 @@ static void __kmp_task_start(kmp_int32 gtid, kmp_task_t *task,
 //   Initialize OMPT fields maintained by a task. This will only be called after
 //   ompt_start_tool, so we already know whether ompt is enabled or not.
 
-static inline void __ompt_task_init(kmp_taskdata_t *task, int tid) {
+static inline void __ompt_task_init(kmp_taskdata_t *task, int tid, 
+  ompt_data_t task_data=ompt_data_none) {
   // The calls to __ompt_task_init already have the ompt_enabled condition.
-  task->ompt_task_info.task_data.value = 0;
+  task->ompt_task_info.task_data = task_data;
   task->ompt_task_info.frame.exit_frame = ompt_data_none;
   task->ompt_task_info.frame.enter_frame = ompt_data_none;
   task->ompt_task_info.frame.exit_frame_flags =
@@ -607,6 +608,33 @@ static inline void __ompt_task_finish(kmp_task_t *task,
         (resumed_task ? &(resumed_task->ompt_task_info.task_data) : NULL));
   }
 }
+
+// __ompt_task_finish:
+//   Build and trigger task creation begin event
+static inline void __ompt_task_creation_start(ompt_data_t *task_data,
+                                     kmp_taskdata_t *current_task) {
+  /* let OMPT know that we're creating a task */
+  if (ompt_enabled.ompt_callback_task_creation) {
+    ompt_callbacks.ompt_callback(ompt_callback_task_creation)(
+        ompt_scope_begin, &(current_task->ompt_task_info.task_data), 
+        task_data);
+  }
+}
+
+// __ompt_task_finish:
+//   Build and trigger task creation end event
+static inline void __ompt_task_creation_end(kmp_task_t *task,
+                                     kmp_taskdata_t *current_task) {
+  kmp_taskdata_t *taskdata = KMP_TASK_TO_TASKDATA(task);
+  /* let OMPT know that we're creating a task */
+  if (ompt_enabled.ompt_callback_task_creation) {
+    ompt_callbacks.ompt_callback(ompt_callback_task_creation)(
+        ompt_scope_end, &(current_task->ompt_task_info.task_data), 
+        &(taskdata->ompt_task_info.task_data));
+  }
+}
+
+
 #endif
 
 template <bool ompt>
@@ -1222,6 +1250,12 @@ kmp_task_t *__kmp_task_alloc(ident_t *loc_ref, kmp_int32 gtid,
     }
   }
 
+#if OMPT_SUPPORT
+  ompt_data_t task_data=ompt_data_none;
+  if (UNLIKELY(ompt_enabled.enabled))
+    __ompt_task_creation_start(&task_data, parent_task);
+#endif
+
   KA_TRACE(10, ("__kmp_task_alloc(enter): T#%d loc=%p, flags=(0x%x) "
                 "sizeof_task=%ld sizeof_shared=%ld entry=%p\n",
                 gtid, loc_ref, *((kmp_int32 *)flags), sizeof_kmp_task_t,
@@ -1389,7 +1423,7 @@ kmp_task_t *__kmp_task_alloc(ident_t *loc_ref, kmp_int32 gtid,
   taskdata->td_allow_completion_event.type = KMP_EVENT_UNINITIALIZED;
 #if OMPT_SUPPORT
   if (UNLIKELY(ompt_enabled.enabled))
-    __ompt_task_init(taskdata, gtid);
+    __ompt_task_init(taskdata, gtid, task_data);
 #endif
   // TODO: What would be the balance between the conditions in the function and
   // an atomic operation?
@@ -1706,7 +1740,18 @@ kmp_int32 __kmpc_omp_task_parts(ident_t *loc_ref, kmp_int32 gtid,
   { // Execute this task immediately
     kmp_taskdata_t *current_task = __kmp_threads[gtid]->th.th_current_task;
     new_taskdata->td_flags.task_serial = 1;
+#if OMPT_SUPPORT
+    if (UNLIKELY(ompt_enabled.enabled))
+      __ompt_task_creation_end(new_task, current_task);
+#endif
     __kmp_invoke_task(gtid, new_task, current_task);
+#if OMPT_SUPPORT
+  } else {
+    if (UNLIKELY(ompt_enabled.enabled)) {
+      kmp_taskdata_t *current_task = __kmp_threads[gtid]->th.th_current_task;
+      __ompt_task_creation_end(new_task, current_task);
+    }
+#endif
   }
 
   KA_TRACE(
@@ -1735,7 +1780,7 @@ kmp_int32 __kmpc_omp_task_parts(ident_t *loc_ref, kmp_int32 gtid,
 //    TASK_CURRENT_QUEUED (1) if suspended and queued the current task to be
 //    resumed later.
 kmp_int32 __kmp_omp_task(kmp_int32 gtid, kmp_task_t *new_task,
-                         bool serialize_immediate) {
+                         bool serialize_immediate, bool release_blocked) {
   kmp_taskdata_t *new_taskdata = KMP_TASK_TO_TASKDATA(new_task);
 
   /* Should we execute the new task or queue it? For now, let's just always try
@@ -1744,9 +1789,20 @@ kmp_int32 __kmp_omp_task(kmp_int32 gtid, kmp_task_t *new_task,
       __kmp_push_task(gtid, new_task) == TASK_NOT_PUSHED) // if cannot defer
   { // Execute this task immediately
     kmp_taskdata_t *current_task = __kmp_threads[gtid]->th.th_current_task;
+#if OMPT_SUPPORT
+    if (UNLIKELY(ompt_enabled.enabled) && !release_blocked)
+      __ompt_task_creation_end(new_task, current_task);
+#endif
     if (serialize_immediate)
       new_taskdata->td_flags.task_serial = 1;
     __kmp_invoke_task(gtid, new_task, current_task);
+#if OMPT_SUPPORT
+  } else {
+    if (UNLIKELY(ompt_enabled.enabled) && !release_blocked) {
+      kmp_taskdata_t *current_task = __kmp_threads[gtid]->th.th_current_task;
+      __ompt_task_creation_end(new_task, current_task);
+    }
+#endif
   }
 
   return TASK_CURRENT_NOT_QUEUED;
@@ -4100,6 +4156,11 @@ kmp_task_t *__kmp_task_dup_alloc(kmp_info_t *thread, kmp_task_t *task_src) {
   size_t shareds_offset;
   size_t task_size;
 
+#if OMPT_SUPPORT
+  ompt_data_t task_data=ompt_data_none;
+  if (UNLIKELY(ompt_enabled.enabled))
+    __ompt_task_creation_start(&task_data, parent_task);
+#endif
   KA_TRACE(10, ("__kmp_task_dup_alloc(enter): Th %p, source task %p\n", thread,
                 task_src));
   KMP_DEBUG_ASSERT(taskdata_src->td_flags.proxy ==
@@ -4153,7 +4214,7 @@ kmp_task_t *__kmp_task_dup_alloc(kmp_info_t *thread, kmp_task_t *task_src) {
             thread, taskdata, taskdata->td_parent));
 #if OMPT_SUPPORT
   if (UNLIKELY(ompt_enabled.enabled))
-    __ompt_task_init(taskdata, thread->th.th_info.ds.ds_gtid);
+    __ompt_task_init(taskdata, thread->th.th_info.ds.ds_gtid,task_data);
 #endif
   return task;
 }

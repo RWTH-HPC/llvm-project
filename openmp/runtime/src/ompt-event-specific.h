@@ -51,6 +51,7 @@
 #define ompt_callback_parallel_end_implemented ompt_event_MAY_ALWAYS
 
 #define ompt_callback_task_create_implemented ompt_event_MAY_ALWAYS
+#define ompt_callback_task_creation_implemented ompt_event_MAY_ALWAYS_OPTIONAL
 #define ompt_callback_task_schedule_implemented ompt_event_MAY_ALWAYS
 
 #define ompt_callback_implicit_task_implemented ompt_event_MAY_ALWAYS

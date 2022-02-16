@@ -151,10 +151,10 @@ static inline void __kmp_release_deps(kmp_int32 gtid, kmp_taskdata_t *task) {
             kmp_int32 encountering_tid = __kmp_tid_from_gtid(encountering_gtid);
             __kmpc_give_task(successor->dn.task, encountering_tid);
           } else {
-            __kmp_omp_task(gtid, successor->dn.task, false);
+            __kmp_omp_task(gtid, successor->dn.task, false, true);
           }
         } else {
-          __kmp_omp_task(gtid, successor->dn.task, false);
+          __kmp_omp_task(gtid, successor->dn.task, false, true);
         }
       }
     }

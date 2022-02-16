@@ -3925,7 +3925,7 @@ KMP_EXPORT void __kmpc_omp_wait_deps(ident_t *loc_ref, kmp_int32 gtid,
                                      kmp_int32 ndeps_noalias,
                                      kmp_depend_info_t *noalias_dep_list);
 extern kmp_int32 __kmp_omp_task(kmp_int32 gtid, kmp_task_t *new_task,
-                                bool serialize_immediate);
+                                bool serialize_immediate, bool release_dep=false);
 
 KMP_EXPORT kmp_int32 __kmpc_cancel(ident_t *loc_ref, kmp_int32 gtid,
                                    kmp_int32 cncl_kind);

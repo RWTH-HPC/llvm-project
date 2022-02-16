@@ -691,6 +691,12 @@ kmp_int32 __kmpc_omp_task_with_deps(ident_t *loc_ref, kmp_int32 gtid,
 #if OMPT_SUPPORT
       if (ompt_enabled.enabled) {
         current_task->ompt_task_info.frame.enter_frame = ompt_data_none;
+        /* let OMPT know that we're creating a task */
+        if (ompt_enabled.ompt_callback_task_creation) {
+          ompt_callbacks.ompt_callback(ompt_callback_task_creation)(
+              ompt_scope_end, &(current_task->ompt_task_info.task_data), 
+              &(new_taskdata->ompt_task_info.task_data));
+        }
       }
 #endif
       return TASK_CURRENT_NOT_QUEUED;

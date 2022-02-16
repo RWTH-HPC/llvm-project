@@ -36,19 +36,26 @@ static ompt_get_parallel_info_t ompt_get_parallel_info;
 static ompt_get_thread_data_t ompt_get_thread_data;
 ompt_finalize_tool_t ompt_finalize_tool;
 
+static int hasTaskCreation=0;
 
-
+template<bool always=true>
 struct ompTimer {
   const char* loc;
+  bool stopped{false};
   ompTimer(const char* loc=NULL): loc(loc) {
     if (thread_local_clock == nullptr)
       thread_local_clock =
           new THREAD_CLOCK(my_next_id(), 0);
-    else
-      thread_local_clock->Stop(OMP, loc);
+    else{
+      if (always || !thread_local_clock->stopped_clock)
+        thread_local_clock->Stop(OMP, loc);
+      else
+        stopped = true;
+    }
   }
   ~ompTimer() {
-    thread_local_clock->Start(OMP, loc);
+    if (always || !stopped)
+      thread_local_clock->Start(OMP, loc);
   }
 };
 
@@ -762,9 +769,26 @@ static void ompt_tsan_task_create(
     // Use the newly created address. We cannot use a single address from the
     // parent because that would declare wrong relationships with other
     // sibling tasks that may be created before this task is started!
-    ompTimer ot{"TaskCreate"};
+    ompTimer<false> ot{"TaskCreate"};
     OmpHappensBefore(Data->GetTaskPtr());
     ToTaskData(parent_task_data)->execution++;
+  }
+}
+
+static void ompt_tsan_task_creation(
+    ompt_scope_endpoint_t endpoint,
+    ompt_data_t *parent_task_data,    /* id of parent task            */
+    ompt_data_t *new_task_data)       /* id of created task           */
+{
+  switch (endpoint) {
+  case ompt_scope_begin:
+    // runtime overhead, stop useful
+    thread_local_clock->Stop(OMP, "TaskCreationBegin");
+    break;
+  case ompt_scope_end:
+    // runtime overhead, stop useful
+    thread_local_clock->Start(OMP, "TaskCreationEnd");
+    break;
   }
 }
 
@@ -895,7 +919,7 @@ static void ompt_tsan_task_schedule(ompt_data_t *first_task_data,
 static void ompt_tsan_dependences(ompt_data_t *task_data,
                                   const ompt_dependence_t *deps, int ndeps) {
   if (ndeps > 0) {
-    ompTimer ot{"TaskDepend"};
+    ompTimer<false> ot{"TaskDepend"};
     // Copy the data to use it in task_switch and task_end.
     TaskData *Data = ToTaskData(task_data);
     if (!Data->Parent->DependencyMap)
@@ -947,7 +971,7 @@ static void ompt_tsan_mutex_acquired(ompt_mutex_t kind, ompt_wait_id_t wait_id,
 
 static void ompt_tsan_mutex_released(ompt_mutex_t kind, ompt_wait_id_t wait_id,
                                      const void *codeptr_ra) {
-    ompTimer ot{"MutexRelease"};
+    ompTimer<> ot{"MutexRelease"};
   LocksMutex.lock();
   auto &Lock = Locks[wait_id];
   LocksMutex.unlock();
@@ -1005,6 +1029,7 @@ static int ompt_tsan_initialize(ompt_function_lookup_t lookup, int device_num,
   SET_CALLBACK(control_tool);
 
   SET_CALLBACK(task_create);
+  SET_OPTIONAL_CALLBACK_T(task_creation, task_creation, hasTaskCreation, ompt_set_never);
   SET_CALLBACK(task_schedule);
   SET_CALLBACK(dependences);
 
