@@ -9,6 +9,8 @@
 #ifndef _LIBCPP___UTILITY_PAIR_H
 #define _LIBCPP___UTILITY_PAIR_H
 
+#include <__compare/common_comparison_category.h>
+#include <__compare/synth_three_way.h>
 #include <__config>
 #include <__functional/unwrap_ref.h>
 #include <__tuple>
@@ -19,11 +21,10 @@
 #include <type_traits>
 
 #if !defined(_LIBCPP_HAS_NO_PRAGMA_SYSTEM_HEADER)
-#pragma GCC system_header
+#  pragma GCC system_header
 #endif
 
 _LIBCPP_BEGIN_NAMESPACE_STD
-
 
 #if defined(_LIBCPP_DEPRECATED_ABI_DISABLE_PAIR_TRIVIAL_COPY_CTOR)
 template <class, class>
@@ -167,18 +168,28 @@ struct _LIBCPP_TEMPLATE_VIS pair
                    is_nothrow_copy_constructible<second_type>::value)
         : first(__t1), second(__t2) {}
 
-    template<class _U1, class _U2, typename enable_if<
-             _CheckArgs::template __enable_explicit<_U1, _U2>()
-    >::type* = nullptr>
+    template <
+#if _LIBCPP_STD_VER > 20 // http://wg21.link/P1951
+        class _U1 = _T1, class _U2 = _T2,
+#else
+        class _U1, class _U2,
+#endif
+        typename enable_if<_CheckArgs::template __enable_explicit<_U1, _U2>()>::type* = nullptr
+    >
     _LIBCPP_INLINE_VISIBILITY _LIBCPP_CONSTEXPR_AFTER_CXX11
     explicit pair(_U1&& __u1, _U2&& __u2)
         _NOEXCEPT_((is_nothrow_constructible<first_type, _U1>::value &&
                     is_nothrow_constructible<second_type, _U2>::value))
         : first(_VSTD::forward<_U1>(__u1)), second(_VSTD::forward<_U2>(__u2)) {}
 
-    template<class _U1, class _U2, typename enable_if<
-            _CheckArgs::template __enable_implicit<_U1, _U2>()
-    >::type* = nullptr>
+    template <
+#if _LIBCPP_STD_VER > 20 // http://wg21.link/P1951
+        class _U1 = _T1, class _U2 = _T2,
+#else
+        class _U1, class _U2,
+#endif
+        typename enable_if<_CheckArgs::template __enable_implicit<_U1, _U2>()>::type* = nullptr
+    >
     _LIBCPP_INLINE_VISIBILITY _LIBCPP_CONSTEXPR_AFTER_CXX11
     pair(_U1&& __u1, _U2&& __u2)
         _NOEXCEPT_((is_nothrow_constructible<first_type, _U1>::value &&
@@ -304,10 +315,12 @@ private:
 #endif
 };
 
-#if _LIBCPP_STD_VER >= 17
+#if _LIBCPP_STD_VER > 14
 template<class _T1, class _T2>
 pair(_T1, _T2) -> pair<_T1, _T2>;
 #endif
+
+// [pairs.spec], specialized algorithms
 
 template <class _T1, class _T2>
 inline _LIBCPP_INLINE_VISIBILITY _LIBCPP_CONSTEXPR_AFTER_CXX11
@@ -316,6 +329,23 @@ operator==(const pair<_T1,_T2>& __x, const pair<_T1,_T2>& __y)
 {
     return __x.first == __y.first && __x.second == __y.second;
 }
+
+#if !defined(_LIBCPP_HAS_NO_CONCEPTS)
+
+template <class _T1, class _T2>
+_LIBCPP_HIDE_FROM_ABI constexpr
+common_comparison_category_t<
+        __synth_three_way_result<_T1>,
+        __synth_three_way_result<_T2> >
+operator<=>(const pair<_T1,_T2>& __x, const pair<_T1,_T2>& __y)
+{
+    if (auto __c = _VSTD::__synth_three_way(__x.first, __y.first); __c != 0) {
+      return __c;
+    }
+    return _VSTD::__synth_three_way(__x.second, __y.second);
+}
+
+#else // !defined(_LIBCPP_HAS_NO_CONCEPTS)
 
 template <class _T1, class _T2>
 inline _LIBCPP_INLINE_VISIBILITY _LIBCPP_CONSTEXPR_AFTER_CXX11
@@ -356,6 +386,24 @@ operator<=(const pair<_T1,_T2>& __x, const pair<_T1,_T2>& __y)
 {
     return !(__y < __x);
 }
+
+#endif // !defined(_LIBCPP_HAS_NO_CONCEPTS)
+
+#if _LIBCPP_STD_VER > 20 && !defined(_LIBCPP_HAS_NO_CONCEPTS)
+template <class _T1, class _T2, class _U1, class _U2, template<class> class _TQual, template<class> class _UQual>
+    requires requires { typename pair<common_reference_t<_TQual<_T1>, _UQual<_U1>>,
+                                      common_reference_t<_TQual<_T2>, _UQual<_U2>>>; }
+struct basic_common_reference<pair<_T1, _T2>, pair<_U1, _U2>, _TQual, _UQual> {
+    using type = pair<common_reference_t<_TQual<_T1>, _UQual<_U1>>,
+                      common_reference_t<_TQual<_T2>, _UQual<_U2>>>;
+};
+
+template <class _T1, class _T2, class _U1, class _U2>
+    requires requires { typename pair<common_type_t<_T1, _U1>, common_type_t<_T2, _U2>>; }
+struct common_type<pair<_T1, _T2>, pair<_U1, _U2>> {
+    using type = pair<common_type_t<_T1, _U1>, common_type_t<_T2, _U2>>;
+};
+#endif // _LIBCPP_STD_VER > 20 && !defined(_LIBCPP_HAS_NO_CONCEPTS)
 
 template <class _T1, class _T2>
 inline _LIBCPP_INLINE_VISIBILITY _LIBCPP_CONSTEXPR_AFTER_CXX17

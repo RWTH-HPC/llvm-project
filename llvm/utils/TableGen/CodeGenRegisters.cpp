@@ -204,12 +204,16 @@ namespace {
 class RegUnitIterator {
   CodeGenRegister::Vec::const_iterator RegI, RegE;
   CodeGenRegister::RegUnitList::iterator UnitI, UnitE;
+  static CodeGenRegister::RegUnitList Sentinel;
 
 public:
   RegUnitIterator(const CodeGenRegister::Vec &Regs):
     RegI(Regs.begin()), RegE(Regs.end()) {
 
-    if (RegI != RegE) {
+    if (RegI == RegE) {
+      UnitI = Sentinel.end();
+      UnitE = Sentinel.end();
+    } else {
       UnitI = (*RegI)->getRegUnits().begin();
       UnitE = (*RegI)->getRegUnits().end();
       advance();
@@ -239,6 +243,8 @@ protected:
     }
   }
 };
+
+CodeGenRegister::RegUnitList RegUnitIterator::Sentinel;
 
 } // end anonymous namespace
 
@@ -1106,6 +1112,17 @@ void CodeGenRegisterClass::buildRegUnitSet(const CodeGenRegBank &RegBank,
 }
 
 //===----------------------------------------------------------------------===//
+//                           CodeGenRegisterCategory
+//===----------------------------------------------------------------------===//
+
+CodeGenRegisterCategory::CodeGenRegisterCategory(CodeGenRegBank &RegBank,
+                                                 Record *R)
+    : TheDef(R), Name(std::string(R->getName())) {
+  for (Record *RegClass : R->getValueAsListOfDefs("Classes"))
+    Classes.push_back(RegBank.getRegClass(RegClass));
+}
+
+//===----------------------------------------------------------------------===//
 //                               CodeGenRegBank
 //===----------------------------------------------------------------------===//
 
@@ -1222,6 +1239,12 @@ CodeGenRegBank::CodeGenRegBank(RecordKeeper &Records,
   for (auto &RC : RegClasses)
     RC.EnumValue = i++;
   CodeGenRegisterClass::computeSubClasses(*this);
+
+  // Read in the register category definitions.
+  std::vector<Record *> RCats =
+      Records.getAllDerivedDefinitions("RegisterCategory");
+  for (auto *R : RCats)
+    RegCategories.emplace_back(*this, R);
 }
 
 // Create a synthetic CodeGenSubRegIndex without a corresponding Record.
@@ -1624,9 +1647,9 @@ static void computeUberSets(std::vector<UberRegSet> &UberSets,
     assert(USetID && "register number 0 is invalid");
 
     AllocatableRegs.insert((*Regs.begin())->EnumValue);
-    for (auto I = std::next(Regs.begin()), E = Regs.end(); I != E; ++I) {
-      AllocatableRegs.insert((*I)->EnumValue);
-      UberSetIDs.join(USetID, (*I)->EnumValue);
+    for (const CodeGenRegister *CGR : llvm::drop_begin(Regs)) {
+      AllocatableRegs.insert(CGR->EnumValue);
+      UberSetIDs.join(USetID, CGR->EnumValue);
     }
   }
   // Combine non-allocatable regs.
@@ -1915,6 +1938,9 @@ void CodeGenRegBank::computeRegUnitSets() {
       RegUnitSets.pop_back();
   }
 
+  if (RegUnitSets.empty())
+    PrintFatalError("RegUnitSets cannot be empty!");
+
   LLVM_DEBUG(dbgs() << "\nBefore pruning:\n"; for (unsigned USIdx = 0,
                                                    USEnd = RegUnitSets.size();
                                                    USIdx < USEnd; ++USIdx) {
@@ -2025,7 +2051,8 @@ void CodeGenRegBank::computeRegUnitSets() {
       }
     }
     LLVM_DEBUG(dbgs() << "\n");
-    assert(!RegClassUnitSets[RCIdx].empty() && "missing unit set for regclass");
+    assert((!RegClassUnitSets[RCIdx].empty() || !RC.GeneratePressureSet) &&
+           "missing unit set for regclass");
   }
 
   // For each register unit, ensure that we have the list of UnitSets that

@@ -80,7 +80,7 @@ const ArrayRef<uint32_t> ProfileSummaryBuilder::DefaultCutoffs =
     DefaultCutoffsData;
 
 const ProfileSummaryEntry &
-ProfileSummaryBuilder::getEntryForPercentile(SummaryEntryVector &DS,
+ProfileSummaryBuilder::getEntryForPercentile(const SummaryEntryVector &DS,
                                              uint64_t Percentile) {
   auto It = partition_point(DS, [=](const ProfileSummaryEntry &Entry) {
     return Entry.Cutoff < Percentile;
@@ -110,7 +110,13 @@ void SampleProfileSummaryBuilder::addRecord(
     NumFunctions++;
     if (FS.getHeadSamples() > MaxFunctionCount)
       MaxFunctionCount = FS.getHeadSamples();
+  } else if (FS.getContext().hasAttribute(
+                 sampleprof::ContextDuplicatedIntoBase)) {
+    // Do not recount callee samples if they are already merged into their base
+    // profiles. This can happen to CS nested profile.
+    return;
   }
+
   for (const auto &I : FS.getBodySamples()) {
     uint64_t Count = I.second.getSamples();
       addCount(Count);
@@ -154,7 +160,8 @@ void ProfileSummaryBuilder::computeDetailedSummary() {
   }
 }
 
-uint64_t ProfileSummaryBuilder::getHotCountThreshold(SummaryEntryVector &DS) {
+uint64_t
+ProfileSummaryBuilder::getHotCountThreshold(const SummaryEntryVector &DS) {
   auto &HotEntry =
       ProfileSummaryBuilder::getEntryForPercentile(DS, ProfileSummaryCutoffHot);
   uint64_t HotCountThreshold = HotEntry.MinCount;
@@ -163,7 +170,8 @@ uint64_t ProfileSummaryBuilder::getHotCountThreshold(SummaryEntryVector &DS) {
   return HotCountThreshold;
 }
 
-uint64_t ProfileSummaryBuilder::getColdCountThreshold(SummaryEntryVector &DS) {
+uint64_t
+ProfileSummaryBuilder::getColdCountThreshold(const SummaryEntryVector &DS) {
   auto &ColdEntry = ProfileSummaryBuilder::getEntryForPercentile(
       DS, ProfileSummaryCutoffCold);
   uint64_t ColdCountThreshold = ColdEntry.MinCount;
@@ -190,9 +198,9 @@ SampleProfileSummaryBuilder::computeSummaryForProfiles(
   // into many copies each representing the CFG profile of a particular calling
   // context. That makes the count distribution looks more flat as we now have
   // more function profiles each with lower counts, which in turn leads to lower
-  // hot thresholds. To compensate for that, by defauly we merge context
+  // hot thresholds. To compensate for that, by default we merge context
   // profiles before computing profile summary.
-  if (UseContextLessSummary || (sampleprof::FunctionSamples::ProfileIsCS &&
+  if (UseContextLessSummary || (sampleprof::FunctionSamples::ProfileIsCSFlat &&
                                 !UseContextLessSummary.getNumOccurrences())) {
     for (const auto &I : Profiles) {
       ContextLessProfiles[I.second.getName()].merge(I.second);

@@ -28,6 +28,8 @@
 
 #include "Plugins/Process/minidump/MinidumpTypes.h"
 
+#include <cinttypes>
+
 using namespace lldb;
 using namespace lldb_private;
 using namespace llvm::minidump;
@@ -113,7 +115,7 @@ Status MinidumpFileBuilder::AddSystemInfo(const llvm::Triple &target_triple) {
   sys_info.PlatformId = platform_id;
   m_data.AppendData(&sys_info, sizeof(llvm::minidump::SystemInfo));
 
-  std::string csd_string = "";
+  std::string csd_string;
 
   error = WriteString(csd_string, &m_data);
   if (error.Fail()) {
@@ -270,7 +272,8 @@ Status MinidumpFileBuilder::AddModuleList(Target &target) {
         mod->GetObjectFile()->GetBaseAddress().GetLoadAddress(&target));
     m.SizeOfImage = static_cast<llvm::support::ulittle32_t>(mod_size);
     m.Checksum = static_cast<llvm::support::ulittle32_t>(0);
-    m.TimeDateStamp = static_cast<llvm::support::ulittle32_t>(std::time(0));
+    m.TimeDateStamp =
+        static_cast<llvm::support::ulittle32_t>(std::time(nullptr));
     m.ModuleNameRVA = static_cast<llvm::support::ulittle32_t>(
         size_before + module_stream_size + helper_data.GetByteSize());
     m.VersionInfo = info;
@@ -717,7 +720,7 @@ Status MinidumpFileBuilder::Dump(lldb::FileUP &core_file) const {
   header.Checksum = static_cast<llvm::support::ulittle32_t>(
       0u), // not used in most of the writers
       header.TimeDateStamp =
-          static_cast<llvm::support::ulittle32_t>(std::time(0));
+          static_cast<llvm::support::ulittle32_t>(std::time(nullptr));
   header.Flags =
       static_cast<llvm::support::ulittle64_t>(0u); // minidump normal flag
 
@@ -729,7 +732,7 @@ Status MinidumpFileBuilder::Dump(lldb::FileUP &core_file) const {
   if (error.Fail() || bytes_written != header_size) {
     if (bytes_written != header_size)
       error.SetErrorStringWithFormat(
-          "Unable to write the header. (written %ld/%ld).", bytes_written,
+          "unable to write the header (written %zd/%zd)", bytes_written,
           header_size);
     return error;
   }
@@ -740,7 +743,7 @@ Status MinidumpFileBuilder::Dump(lldb::FileUP &core_file) const {
   if (error.Fail() || bytes_written != m_data.GetByteSize()) {
     if (bytes_written != m_data.GetByteSize())
       error.SetErrorStringWithFormat(
-          "Unable to write the data. (written %ld/%ld).", bytes_written,
+          "unable to write the data (written %zd/%" PRIu64 ")", bytes_written,
           m_data.GetByteSize());
     return error;
   }
@@ -752,7 +755,7 @@ Status MinidumpFileBuilder::Dump(lldb::FileUP &core_file) const {
     if (error.Fail() || bytes_written != directory_size) {
       if (bytes_written != directory_size)
         error.SetErrorStringWithFormat(
-            "Unable to write the directory. (written %ld/%ld).", bytes_written,
+            "unable to write the directory (written %zd/%zd)", bytes_written,
             directory_size);
       return error;
     }

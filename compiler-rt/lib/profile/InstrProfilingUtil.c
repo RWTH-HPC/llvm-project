@@ -336,6 +336,7 @@ COMPILER_RT_VISIBILITY int lprofSuspendSigKill() {
   if (procctl(P_PID, 0, PROC_PDEATHSIG_STATUS, &PDeachSig) == 0 &&
       PDeachSig == SIGKILL)
     procctl(P_PID, 0, PROC_PDEATHSIG_CTL, &PDisableSig);
+  return (PDeachSig == SIGKILL);
 #else
   return 0;
 #endif
@@ -352,6 +353,10 @@ COMPILER_RT_VISIBILITY void lprofRestoreSigKill() {
 
 COMPILER_RT_VISIBILITY int lprofReleaseMemoryPagesToOS(uintptr_t Begin,
                                                        uintptr_t End) {
+#if defined(__ve__)
+  // VE doesn't support madvise.
+  return 0;
+#else
   size_t PageSize = getpagesize();
   uintptr_t BeginAligned = lprofRoundUpTo((uintptr_t)Begin, PageSize);
   uintptr_t EndAligned = lprofRoundDownTo((uintptr_t)End, PageSize);
@@ -366,4 +371,5 @@ COMPILER_RT_VISIBILITY int lprofReleaseMemoryPagesToOS(uintptr_t Begin,
 #endif
   }
   return 0;
+#endif
 }

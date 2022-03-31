@@ -19,26 +19,31 @@
 #include <cstdio>
 #include <string>
 
-DeviceTy::DeviceTy(const DeviceTy &D)
-    : DeviceID(D.DeviceID), RTL(D.RTL), RTLDeviceID(D.RTLDeviceID),
-      IsInit(D.IsInit), InitFlag(), HasPendingGlobals(D.HasPendingGlobals),
-      HostDataToTargetMap(D.HostDataToTargetMap),
-      PendingCtorsDtors(D.PendingCtorsDtors), ShadowPtrMap(D.ShadowPtrMap),
-      DataMapMtx(), PendingGlobalsMtx(), ShadowMtx(),
-      LoopTripCnt(D.LoopTripCnt) {}
+int HostDataToTargetTy::addEventIfNecessary(
+    DeviceTy &Device, AsyncInfoTy &AsyncInfo) const {
+  // First, check if the user disabled atomic map transfer/malloc/dealloc.
+  if (!PM->UseEventsForAtomicTransfers)
+    return OFFLOAD_SUCCESS;
 
-DeviceTy &DeviceTy::operator=(const DeviceTy &D) {
-  DeviceID = D.DeviceID;
-  RTL = D.RTL;
-  RTLDeviceID = D.RTLDeviceID;
-  IsInit = D.IsInit;
-  HasPendingGlobals = D.HasPendingGlobals;
-  HostDataToTargetMap = D.HostDataToTargetMap;
-  PendingCtorsDtors = D.PendingCtorsDtors;
-  ShadowPtrMap = D.ShadowPtrMap;
-  LoopTripCnt = D.LoopTripCnt;
+  void *Event = getEvent();
+  bool NeedNewEvent = Event == nullptr;
+  if (NeedNewEvent && Device.createEvent(&Event) != OFFLOAD_SUCCESS) {
+    REPORT("Failed to create event\n");
+    return OFFLOAD_FAIL;
+  }
 
-  return *this;
+  // We cannot assume the event should not be nullptr because we don't
+  // know if the target support event. But if a target doesn't,
+  // recordEvent should always return success.
+  if (Device.recordEvent(Event, AsyncInfo) != OFFLOAD_SUCCESS) {
+    REPORT("Failed to set dependence on event " DPxMOD "\n", DPxPTR(Event));
+    return OFFLOAD_FAIL;
+  }
+
+  if (NeedNewEvent)
+    setEvent(Event);
+
+  return OFFLOAD_SUCCESS;
 }
 
 DeviceTy::DeviceTy(RTLInfoTy *RTL)
@@ -113,6 +118,9 @@ int DeviceTy::disassociatePtr(void *HstPtrBegin) {
              "count\n");
     } else if (search->isDynRefCountInf()) {
       DP("Association found, removing it\n");
+      void *Event = search->getEvent();
+      if (Event)
+        destroyEvent(Event);
       HostDataToTargetMap.erase(search);
       DataMapMtx.unlock();
       return OFFLOAD_SUCCESS;
@@ -278,7 +286,7 @@ DeviceTy::getTargetPointer(void *HstPtrBegin, void *HstPtrBase, int64_t Size,
   if (TargetPointer && !IsHostPtr && HasFlagTo && (IsNew || HasFlagAlways)) {
     // Lock the entry before releasing the mapping table lock such that another
     // thread that could issue data movement will get the right result.
-    Entry->lock();
+    HostDataToTargetTy::LockGuard LG(*Entry);
     // Release the mapping table lock right after the entry is locked.
     DataMapMtx.unlock();
 
@@ -286,20 +294,39 @@ DeviceTy::getTargetPointer(void *HstPtrBegin, void *HstPtrBase, int64_t Size,
        DPxPTR(HstPtrBegin), DPxPTR(TargetPointer));
 
     int Ret = submitData(TargetPointer, HstPtrBegin, Size, AsyncInfo);
-
-    // Unlock the entry immediately after the data movement is issued.
-    Entry->unlock();
-
     if (Ret != OFFLOAD_SUCCESS) {
       REPORT("Copying data to device failed.\n");
       // We will also return nullptr if the data movement fails because that
       // pointer points to a corrupted memory region so it doesn't make any
       // sense to continue to use it.
       TargetPointer = nullptr;
-    }
+    } else if (Entry->addEventIfNecessary(*this, AsyncInfo) !=
+        OFFLOAD_SUCCESS)
+      return {{false /* IsNewEntry */, false /* IsHostPointer */},
+              {} /* MapTableEntry */,
+              nullptr /* TargetPointer */};
   } else {
     // Release the mapping table lock directly.
     DataMapMtx.unlock();
+    // If not a host pointer and no present modifier, we need to wait for the
+    // event if it exists.
+    // Note: Entry might be nullptr because of zero length array section.
+    if (Entry != HostDataToTargetListTy::iterator() && !IsHostPtr &&
+        !HasPresentModifier) {
+      HostDataToTargetTy::LockGuard LG(*Entry);
+      void *Event = Entry->getEvent();
+      if (Event) {
+        int Ret = waitEvent(Event, AsyncInfo);
+        if (Ret != OFFLOAD_SUCCESS) {
+          // If it fails to wait for the event, we need to return nullptr in
+          // case of any data race.
+          REPORT("Failed to wait for event " DPxMOD ".\n", DPxPTR(Event));
+          return {{false /* IsNewEntry */, false /* IsHostPointer */},
+                  {} /* MapTableEntry */,
+                  nullptr /* TargetPointer */};
+        }
+      }
+    }
   }
 
   return {{IsNew, IsHostPtr}, Entry, TargetPointer};
@@ -308,11 +335,12 @@ DeviceTy::getTargetPointer(void *HstPtrBegin, void *HstPtrBase, int64_t Size,
 // Used by targetDataBegin, targetDataEnd, targetDataUpdate and target.
 // Return the target pointer begin (where the data will be moved).
 // Decrement the reference counter if called from targetDataEnd.
-void *DeviceTy::getTgtPtrBegin(void *HstPtrBegin, int64_t Size, bool &IsLast,
-                               bool UpdateRefCount, bool UseHoldRefCount,
-                               bool &IsHostPtr, bool MustContain,
-                               bool ForceDelete) {
-  void *rc = NULL;
+TargetPointerResultTy
+DeviceTy::getTgtPtrBegin(void *HstPtrBegin, int64_t Size, bool &IsLast,
+                         bool UpdateRefCount, bool UseHoldRefCount,
+                         bool &IsHostPtr, bool MustContain, bool ForceDelete) {
+  void *TargetPointer = NULL;
+  bool IsNew = false;
   IsHostPtr = false;
   IsLast = false;
   DataMapMtx.lock();
@@ -354,7 +382,7 @@ void *DeviceTy::getTgtPtrBegin(void *HstPtrBegin, int64_t Size, bool &IsLast,
          "Size=%" PRId64 ", DynRefCount=%s%s, HoldRefCount=%s%s\n",
          DPxPTR(HstPtrBegin), DPxPTR(tp), Size, HT.dynRefCountToStr().c_str(),
          DynRefCountAction, HT.holdRefCountToStr().c_str(), HoldRefCountAction);
-    rc = (void *)tp;
+    TargetPointer = (void *)tp;
   } else if (PM->RTLs.RequiresFlags & OMP_REQ_UNIFIED_SHARED_MEMORY) {
     // If the value isn't found in the mapping and unified shared memory
     // is on then it means we have stumbled upon a value which we need to
@@ -363,11 +391,11 @@ void *DeviceTy::getTgtPtrBegin(void *HstPtrBegin, int64_t Size, bool &IsLast,
        "memory\n",
        DPxPTR((uintptr_t)HstPtrBegin), Size);
     IsHostPtr = true;
-    rc = HstPtrBegin;
+    TargetPointer = HstPtrBegin;
   }
 
   DataMapMtx.unlock();
-  return rc;
+  return {{IsNew, IsHostPtr}, lr.Entry, TargetPointer};
 }
 
 // Return the target pointer begin (where the data will be moved).
@@ -387,7 +415,7 @@ void *DeviceTy::getTgtPtrBegin(void *HstPtrBegin, int64_t Size) {
 int DeviceTy::deallocTgtPtr(void *HstPtrBegin, int64_t Size,
                             bool HasHoldModifier) {
   // Check if the pointer is contained in any sub-nodes.
-  int rc;
+  int Ret = OFFLOAD_SUCCESS;
   DataMapMtx.lock();
   LookupResult lr = lookupMapping(HstPtrBegin, Size);
   if (lr.Flags.IsContained || lr.Flags.ExtendsBefore || lr.Flags.ExtendsAfter) {
@@ -402,18 +430,22 @@ int DeviceTy::deallocTgtPtr(void *HstPtrBegin, int64_t Size,
            DPxPTR(HT.HstPtrBegin), DPxPTR(HT.TgtPtrBegin), Size,
            (HT.HstPtrName) ? getNameFromMapping(HT.HstPtrName).c_str()
                            : "unknown");
+      void *Event = lr.Entry->getEvent();
       HostDataToTargetMap.erase(lr.Entry);
+      if (Event && destroyEvent(Event) != OFFLOAD_SUCCESS) {
+        REPORT("Failed to destroy event " DPxMOD "\n", DPxPTR(Event));
+        Ret = OFFLOAD_FAIL;
+      }
     }
-    rc = OFFLOAD_SUCCESS;
   } else {
     REPORT("Section to delete (hst addr " DPxMOD ") does not exist in the"
            " allocated memory\n",
            DPxPTR(HstPtrBegin));
-    rc = OFFLOAD_FAIL;
+    Ret = OFFLOAD_FAIL;
   }
 
   DataMapMtx.unlock();
-  return rc;
+  return Ret;
 }
 
 /// Init device, should not be called directly.
@@ -619,7 +651,7 @@ bool device_is_ready(int device_num) {
   }
 
   // Get device info
-  DeviceTy &Device = PM->Devices[device_num];
+  DeviceTy &Device = *PM->Devices[device_num];
 
   DP("Is the device %d (local ID %d) initialized? %d\n", device_num,
      Device.RTLDeviceID, Device.IsInit);

@@ -14,10 +14,9 @@
 #include <__config>
 #include <__format/format_args.h>
 #include <__format/format_fwd.h>
+#include <__iterator/back_insert_iterator.h>
 #include <__iterator/concepts.h>
 #include <concepts>
-#include <iterator>
-#include <string>
 
 #ifndef _LIBCPP_HAS_NO_LOCALIZATION
 #include <locale>
@@ -25,11 +24,8 @@
 #endif
 
 #if !defined(_LIBCPP_HAS_NO_PRAGMA_SYSTEM_HEADER)
-#pragma GCC system_header
+#  pragma GCC system_header
 #endif
-
-_LIBCPP_PUSH_MACROS
-#include <__undef_macros>
 
 _LIBCPP_BEGIN_NAMESPACE_STD
 
@@ -70,9 +66,28 @@ __format_context_create(
 }
 #endif
 
+// TODO FMT Implement [format.context]/4
+// [Note 1: For a given type charT, implementations are encouraged to provide a
+// single instantiation of basic_format_context for appending to
+// basic_string<charT>, vector<charT>, or any other container with contiguous
+// storage by wrapping those in temporary objects with a uniform interface
+// (such as a span<charT>) and polymorphic reallocation. - end note]
+
+using format_context = basic_format_context<back_insert_iterator<string>, char>;
+#ifndef _LIBCPP_HAS_NO_WIDE_CHARACTERS
+using wformat_context = basic_format_context<back_insert_iterator<wstring>, wchar_t>;
+#endif
+
 template <class _OutIt, class _CharT>
 requires output_iterator<_OutIt, const _CharT&>
-class _LIBCPP_TEMPLATE_VIS _LIBCPP_AVAILABILITY_FORMAT basic_format_context {
+class
+    // clang-format off
+    _LIBCPP_TEMPLATE_VIS
+    _LIBCPP_AVAILABILITY_FORMAT
+    _LIBCPP_PREFERRED_NAME(format_context)
+    _LIBCPP_IF_WIDE_CHARACTERS(_LIBCPP_PREFERRED_NAME(wformat_context))
+    // clang-format on
+    basic_format_context {
 public:
   using iterator = _OutIt;
   using char_type = _CharT;
@@ -83,7 +98,7 @@ public:
   basic_format_context& operator=(const basic_format_context&) = delete;
 
   _LIBCPP_HIDE_FROM_ABI basic_format_arg<basic_format_context>
-  arg(size_t __id) const {
+  arg(size_t __id) const noexcept {
     return __args_.get(__id);
   }
 #ifndef _LIBCPP_HAS_NO_LOCALIZATION
@@ -114,9 +129,8 @@ private:
 
   template <class __OutIt, class __CharT>
   friend _LIBCPP_HIDE_FROM_ABI basic_format_context<__OutIt, __CharT>
-  _VSTD::__format_context_create(
-      __OutIt, basic_format_args<basic_format_context<__OutIt, __CharT>>,
-      optional<_VSTD::locale>&&);
+  __format_context_create(__OutIt, basic_format_args<basic_format_context<__OutIt, __CharT>>,
+                          optional<_VSTD::locale>&&);
 
   // Note: the Standard doesn't specify the required constructors.
   _LIBCPP_HIDE_FROM_ABI
@@ -128,8 +142,7 @@ private:
 #else
   template <class __OutIt, class __CharT>
   friend _LIBCPP_HIDE_FROM_ABI basic_format_context<__OutIt, __CharT>
-      _VSTD::__format_context_create(
-          __OutIt, basic_format_args<basic_format_context<__OutIt, __CharT>>);
+      __format_context_create(__OutIt, basic_format_args<basic_format_context<__OutIt, __CharT>>);
 
   _LIBCPP_HIDE_FROM_ABI
   explicit basic_format_context(_OutIt __out_it,
@@ -138,23 +151,10 @@ private:
 #endif
 };
 
-// TODO FMT Implement [format.context]/4
-// [Note 1: For a given type charT, implementations are encouraged to provide a
-// single instantiation of basic_format_context for appending to
-// basic_string<charT>, vector<charT>, or any other container with contiguous
-// storage by wrapping those in temporary objects with a uniform interface
-// (such as a span<charT>) and polymorphic reallocation. - end note]
-
-using format_context = basic_format_context<back_insert_iterator<string>, char>;
-using wformat_context =
-    basic_format_context<back_insert_iterator<wstring>, wchar_t>;
-
 #endif // !defined(_LIBCPP_HAS_NO_CONCEPTS)
 
 #endif //_LIBCPP_STD_VER > 17
 
 _LIBCPP_END_NAMESPACE_STD
-
-_LIBCPP_POP_MACROS
 
 #endif // _LIBCPP___FORMAT_FORMAT_CONTEXT_H

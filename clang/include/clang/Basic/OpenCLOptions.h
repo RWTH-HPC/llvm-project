@@ -80,7 +80,7 @@ public:
   // C++ for OpenCL inherits rule from OpenCL C v2.0.
   bool areProgramScopeVariablesSupported(const LangOptions &Opts) const {
     return Opts.getOpenCLCompatibleVersion() == 200 ||
-           (Opts.OpenCLVersion == 300 &&
+           (Opts.getOpenCLCompatibleVersion() == 300 &&
             isSupported("__opencl_c_program_scope_global_variables", Opts));
   }
 
@@ -212,6 +212,15 @@ private:
   bool isEnabled(llvm::StringRef Ext) const;
 
   OpenCLOptionInfoMap OptMap;
+
+  // First feature in a pair requires the second one to be supported.
+  using FeatureDepEntry = std::pair<llvm::StringRef, llvm::StringRef>;
+  using FeatureDepList = llvm::SmallVector<FeatureDepEntry, 8>;
+
+  static const FeatureDepList DependentFeaturesList;
+
+  // Extensions and equivalent feature pairs.
+  static const llvm::StringMap<llvm::StringRef> FeatureExtensionMap;
 };
 
 } // end namespace clang

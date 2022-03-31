@@ -1,5 +1,5 @@
 # RUN: yaml2obj %s -o %t
-# RUN: not llvm-ifs --input-format=ELF --output-format=IFS --output=%t.tbe %t 2>&1 | FileCheck %s
+# RUN: not llvm-ifs --input-format=ELF --output-ifs=%t.tbe %t 2>&1 | FileCheck %s
 
 !ELF
 FileHeader:
@@ -44,4 +44,4 @@ ProgramHeaders:
     FirstSec: .dynamic
     LastSec:  .dynamic
 
-# CHECK: virtual address is not in any segment: 0x260 when locating .dynstr section contents
+# CHECK: virtual address is not in any segment: 0x260 when locating dynamic string table section contents

@@ -529,9 +529,9 @@ func @illegalCDFGInsideDominanceFreeScope() -> () {
     ^bb1:
       // expected-error @+1 {{operand #0 does not dominate this use}}
       %2:3 = "bar"(%1) : (i64) -> (i1,i1,i1)
-      br ^bb4
+      cf.br ^bb4
     ^bb2:
-      br ^bb2
+      cf.br ^bb2
     ^bb4:
       %1 = "foo"() : ()->i64   // expected-note {{operand defined here}}
 		return %2#1 : i1
@@ -559,8 +559,44 @@ func @graph_region_cant_have_blocks() {
   test.graph_region {
     // expected-error@-1 {{'test.graph_region' op expects graph region #0 to have 0 or 1 blocks}}
   ^bb42:
-    br ^bb43
+    cf.br ^bb43
   ^bb43:
     "terminator"() : () -> ()
   }
+}
+
+// -----
+
+// Check that we can query traits in types
+func @succeeded_type_traits() {
+  // CHECK: "test.result_type_with_trait"() : () -> !test.test_type_with_trait
+  "test.result_type_with_trait"() : () -> !test.test_type_with_trait
+  return
+}
+
+// -----
+
+// Check that we can query traits in types
+func @failed_type_traits() {
+  // expected-error@+1 {{result type should have trait 'TestTypeTrait'}}
+  "test.result_type_with_trait"() : () -> i32
+  return
+}
+
+// -----
+
+// Check that we can query traits in attributes
+func @succeeded_attr_traits() {
+  // CHECK: "test.attr_with_trait"() {attr = #test.attr_with_trait} : () -> ()
+  "test.attr_with_trait"() {attr = #test.attr_with_trait} : () -> ()
+  return
+}
+
+// -----
+
+// Check that we can query traits in attributes
+func @failed_attr_traits() {
+  // expected-error@+1 {{'attr' attribute should have trait 'TestAttrTrait'}}
+  "test.attr_with_trait"() {attr = 42 : i32} : () -> ()
+  return
 }

@@ -32,6 +32,10 @@ std::unique_ptr<Pass> createForLoopPeelingPass();
 /// inside of scf.for loops with known lower and upper bounds.
 std::unique_ptr<Pass> createSCFForLoopCanonicalizationPass();
 
+/// Creates a pass that transforms a single ParallelLoop over N induction
+/// variables into another ParallelLoop over less than N induction variables.
+std::unique_ptr<Pass> createParallelLoopCollapsingPass();
+
 /// Creates a loop fusion pass which fuses parallel loops.
 std::unique_ptr<Pass> createParallelLoopFusionPass();
 
@@ -51,6 +55,9 @@ createParallelLoopTilingPass(llvm::ArrayRef<int64_t> tileSize = {},
 /// Creates a pass which folds arith ops on induction variable into
 /// loop range.
 std::unique_ptr<Pass> createForLoopRangeFoldingPass();
+
+// Creates a pass which lowers for loops into while loops.
+std::unique_ptr<Pass> createForToWhileLoopPass();
 
 //===----------------------------------------------------------------------===//
 // Registration

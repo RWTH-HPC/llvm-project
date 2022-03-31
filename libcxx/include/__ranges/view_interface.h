@@ -18,17 +18,16 @@
 #include <__ranges/access.h>
 #include <__ranges/concepts.h>
 #include <__ranges/empty.h>
-#include <__ranges/enable_view.h>
 #include <concepts>
 #include <type_traits>
 
 #if !defined(_LIBCPP_HAS_NO_PRAGMA_SYSTEM_HEADER)
-#pragma GCC system_header
+#  pragma GCC system_header
 #endif
 
 _LIBCPP_BEGIN_NAMESPACE_STD
 
-#if !defined(_LIBCPP_HAS_NO_RANGES)
+#if !defined(_LIBCPP_HAS_NO_CONCEPTS)
 
 namespace ranges {
 
@@ -40,14 +39,16 @@ void __implicitly_convert_to(type_identity_t<_Tp>) noexcept;
 
 template<class _Derived>
   requires is_class_v<_Derived> && same_as<_Derived, remove_cv_t<_Derived>>
-class view_interface : public view_base {
+class view_interface {
   _LIBCPP_HIDE_FROM_ABI
   constexpr _Derived& __derived() noexcept {
+    static_assert(sizeof(_Derived) && derived_from<_Derived, view_interface> && view<_Derived>);
     return static_cast<_Derived&>(*this);
   }
 
   _LIBCPP_HIDE_FROM_ABI
   constexpr _Derived const& __derived() const noexcept {
+    static_assert(sizeof(_Derived) && derived_from<_Derived, view_interface> && view<_Derived>);
     return static_cast<_Derived const&>(*this);
   }
 
@@ -89,19 +90,19 @@ public:
   template<class _D2 = _Derived>
   _LIBCPP_HIDE_FROM_ABI
   constexpr auto data()
-    noexcept(noexcept(_VSTD::to_address(ranges::begin(__derived()))))
+    noexcept(noexcept(std::to_address(ranges::begin(__derived()))))
     requires contiguous_iterator<iterator_t<_D2>>
   {
-    return _VSTD::to_address(ranges::begin(__derived()));
+    return std::to_address(ranges::begin(__derived()));
   }
 
   template<class _D2 = _Derived>
   _LIBCPP_HIDE_FROM_ABI
   constexpr auto data() const
-    noexcept(noexcept(_VSTD::to_address(ranges::begin(__derived()))))
+    noexcept(noexcept(std::to_address(ranges::begin(__derived()))))
     requires range<const _D2> && contiguous_iterator<iterator_t<const _D2>>
   {
-    return _VSTD::to_address(ranges::begin(__derived()));
+    return std::to_address(ranges::begin(__derived()));
   }
 
   template<class _D2 = _Derived>
@@ -185,9 +186,9 @@ public:
   }
 };
 
-}
+} // namespace ranges
 
-#endif // !defined(_LIBCPP_HAS_NO_RANGES)
+#endif // !defined(_LIBCPP_HAS_NO_CONCEPTS)
 
 _LIBCPP_END_NAMESPACE_STD
 

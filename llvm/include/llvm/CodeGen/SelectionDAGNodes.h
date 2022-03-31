@@ -58,7 +58,6 @@ namespace llvm {
 
 class APInt;
 class Constant;
-template <typename T> struct DenseMapInfo;
 class GlobalValue;
 class MachineBasicBlock;
 class MachineConstantPoolValue;
@@ -676,6 +675,9 @@ public:
     }
   }
 
+  /// Test if this node is a vector predication operation.
+  bool isVPOpcode() const { return ISD::isVPOpcode(getOpcode()); }
+
   /// Test if this node has a post-isel opcode, directly
   /// corresponding to a MachineInstr opcode.
   bool isMachineOpcode() const { return NodeType < 0; }
@@ -739,11 +741,9 @@ public:
     using reference = value_type &;
 
     use_iterator() = default;
-    use_iterator(const use_iterator &I) : Op(I.Op) {}
+    use_iterator(const use_iterator &I) = default;
 
-    bool operator==(const use_iterator &x) const {
-      return Op == x.Op;
-    }
+    bool operator==(const use_iterator &x) const { return Op == x.Op; }
     bool operator!=(const use_iterator &x) const {
       return !operator==(x);
     }
@@ -1363,11 +1363,10 @@ public:
     case ISD::STORE:
     case ISD::VP_STORE:
     case ISD::MSTORE:
+    case ISD::VP_SCATTER:
       return getOperand(2);
     case ISD::MGATHER:
     case ISD::MSCATTER:
-    case ISD::VP_GATHER:
-    case ISD::VP_SCATTER:
       return getOperand(3);
     default:
       return getOperand(1);
@@ -1578,8 +1577,12 @@ public:
   Align getAlignValue() const { return Value->getAlignValue(); }
 
   bool isOne() const { return Value->isOne(); }
-  bool isNullValue() const { return Value->isZero(); }
-  bool isAllOnesValue() const { return Value->isMinusOne(); }
+  bool isZero() const { return Value->isZero(); }
+  // NOTE: This is soft-deprecated.  Please use `isZero()` instead.
+  bool isNullValue() const { return isZero(); }
+  bool isAllOnes() const { return Value->isMinusOne(); }
+  // NOTE: This is soft-deprecated.  Please use `isAllOnes()` instead.
+  bool isAllOnesValue() const { return isAllOnes(); }
   bool isMaxSignedValue() const { return Value->isMaxValue(true); }
   bool isMinSignedValue() const { return Value->isMinValue(true); }
 
@@ -2046,7 +2049,24 @@ public:
   int32_t getConstantFPSplatPow2ToLog2Int(BitVector *UndefElements,
                                           uint32_t BitWidth) const;
 
+  /// Extract the raw bit data from a build vector of Undef, Constant or
+  /// ConstantFP node elements. Each raw bit element will be \p
+  /// DstEltSizeInBits wide, undef elements are treated as zero, and entirely
+  /// undefined elements are flagged in \p UndefElements.
+  bool getConstantRawBits(bool IsLittleEndian, unsigned DstEltSizeInBits,
+                          SmallVectorImpl<APInt> &RawBitElements,
+                          BitVector &UndefElements) const;
+
   bool isConstant() const;
+
+  /// Recast bit data \p SrcBitElements to \p DstEltSizeInBits wide elements.
+  /// Undef elements are treated as zero, and entirely undefined elements are
+  /// flagged in \p DstUndefElements.
+  static void recastRawBits(bool IsLittleEndian, unsigned DstEltSizeInBits,
+                            SmallVectorImpl<APInt> &DstBitElements,
+                            ArrayRef<APInt> SrcBitElements,
+                            BitVector &DstUndefElements,
+                            const BitVector &SrcUndefElements);
 
   static bool classof(const SDNode *N) {
     return N->getOpcode() == ISD::BUILD_VECTOR;
@@ -2351,7 +2371,7 @@ public:
   // Mask is a vector of i1 elements;
   // the type of EVL is TLI.getVPExplicitVectorLengthTy().
   const SDValue &getOffset() const {
-    return getOperand(getOpcode() == ISD::MLOAD ? 2 : 3);
+    return getOperand(getOpcode() == ISD::VP_LOAD ? 2 : 3);
   }
   const SDValue &getBasePtr() const {
     return getOperand(getOpcode() == ISD::VP_LOAD ? 1 : 2);

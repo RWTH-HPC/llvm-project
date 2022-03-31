@@ -10,8 +10,8 @@ target triple = "wasm32-unknown-unknown"
 @global_var = global i32 0, align 4
 ; NO-TLS-DAG: __THREW__ = external global [[PTR]]
 ; NO-TLS-DAG: __threwValue = external global [[PTR]]
-; TLS-DAG: __THREW__ = external thread_local(localexec) global i32
-; TLS-DAG: __threwValue = external thread_local(localexec) global i32
+; TLS-DAG: __THREW__ = external thread_local global i32
+; TLS-DAG: __threwValue = external thread_local global i32
 @global_longjmp_ptr = global void (%struct.__jmp_buf_tag*, i32)* @longjmp, align 4
 ; CHECK-DAG: @global_longjmp_ptr = global void (%struct.__jmp_buf_tag*, i32)* bitcast (void ([[PTR]], i32)* @emscripten_longjmp to void (%struct.__jmp_buf_tag*, i32)*)
 
@@ -131,7 +131,7 @@ entry:
 
 ; Test a case where a function has a setjmp call but no other calls that can
 ; longjmp. We don't need to do any transformation in this case.
-define void @setjmp_only(i8* %ptr) {
+define i32 @setjmp_only(i8* %ptr) {
 ; CHECK-LABEL: @setjmp_only
 entry:
   %buf = alloca [1 x %struct.__jmp_buf_tag], align 16
@@ -139,11 +139,15 @@ entry:
   %call = call i32 @setjmp(%struct.__jmp_buf_tag* %arraydecay) #0
   ; free cannot longjmp
   call void @free(i8* %ptr)
-  ret void
+  ret i32 %call
+; CHECK: entry:
 ; CHECK-NOT: @malloc
 ; CHECK-NOT: %setjmpTable
 ; CHECK-NOT: @saveSetjmp
 ; CHECK-NOT: @testSetjmp
+; The remaining setjmp call is converted to constant 0, because setjmp returns 0
+; when called directly.
+; CHECK: ret i32 0
 }
 
 ; Test SSA validity
@@ -254,7 +258,7 @@ for.inc:                                          ; preds = %for.cond
 
 ; Tests cases where longjmp function pointer is used in other ways than direct
 ; calls. longjmps should be replaced with
-; (int(*)(jmp_buf*, int))emscripten_longjmp.
+; (void(*)(jmp_buf*, int))emscripten_longjmp.
 declare void @take_longjmp(void (%struct.__jmp_buf_tag*, i32)* %arg_ptr)
 define void @indirect_longjmp() {
 ; CHECK-LABEL: @indirect_longjmp
@@ -282,12 +286,30 @@ entry:
   ret void
 }
 
+; Test if _setjmp and _longjmp calls are treated in the same way as setjmp and
+; longjmp
+define void @_setjmp__longjmp() {
+; CHECK-LABEL: @_setjmp__longjmp
+; These calls should have been transformed away
+; CHECK-NOT: call i32 @_setjmp
+; CHECK-NOT: call void @_longjmp
+entry:
+  %buf = alloca [1 x %struct.__jmp_buf_tag], align 16
+  %arraydecay = getelementptr inbounds [1 x %struct.__jmp_buf_tag], [1 x %struct.__jmp_buf_tag]* %buf, i32 0, i32 0
+  %call = call i32 @_setjmp(%struct.__jmp_buf_tag* %arraydecay) #0
+  %arraydecay1 = getelementptr inbounds [1 x %struct.__jmp_buf_tag], [1 x %struct.__jmp_buf_tag]* %buf, i32 0, i32 0
+  call void @_longjmp(%struct.__jmp_buf_tag* %arraydecay1, i32 1) #1
+  unreachable
+}
+
 ; Function Attrs: nounwind
 declare void @foo() #2
 ; Function Attrs: returns_twice
 declare i32 @setjmp(%struct.__jmp_buf_tag*) #0
+declare i32 @_setjmp(%struct.__jmp_buf_tag*) #0
 ; Function Attrs: noreturn
 declare void @longjmp(%struct.__jmp_buf_tag*, i32) #1
+declare void @_longjmp(%struct.__jmp_buf_tag*, i32) #1
 declare i32 @__gxx_personality_v0(...)
 declare i8* @__cxa_begin_catch(i8*)
 declare void @__cxa_end_catch()

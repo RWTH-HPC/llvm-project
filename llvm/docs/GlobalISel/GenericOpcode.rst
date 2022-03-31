@@ -642,17 +642,6 @@ G_VECREDUCE_FMAX, G_VECREDUCE_FMIN
 
 FMIN/FMAX nodes can have flags, for NaN/NoNaN variants.
 
-G_ISNAN
-^^^^^^^
-
-GlobalISel-equivalent of the '``llvm.isnan``' intrinsic.
-
-Returns a 1-bit scalar or vector of 1-bit scalar values. The result's contents
-represent whether or not the source value is NaN.
-
-.. code-block:: none
-
-  %is_nan:_(s1) = G_ISNAN %check_me_for_nan
 
 Integer/bitwise reductions
 ^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -822,9 +811,9 @@ Indirect branch to jump table entry
 G_JUMP_TABLE
 ^^^^^^^^^^^^
 
-Generates a pointer to the address of the jump table specified by the source 
+Generates a pointer to the address of the jump table specified by the source
 operand. The source operand is a jump table index.
-G_JUMP_TABLE can be used in conjunction with G_BRJT to support jump table 
+G_JUMP_TABLE can be used in conjunction with G_BRJT to support jump table
 codegen with GlobalISel.
 
 .. code-block:: none
