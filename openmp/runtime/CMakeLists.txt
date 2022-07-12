@@ -122,6 +122,8 @@ set(LIBOMP_USE_HWLOC FALSE CACHE BOOL
   "Use Hwloc (http://www.open-mpi.org/projects/hwloc/) library for affinity?")
 set(LIBOMP_HWLOC_INSTALL_DIR /usr/local CACHE PATH
   "Install path for hwloc library")
+set(LIBOMP_USE_NUMA_DEVICE_AFFINITY TRUE CACHE BOOL
+  "Include thread-to-device affinty during compilation")
 
 # Get the build number from kmp_version.cpp
 libomp_get_build_number("${CMAKE_CURRENT_SOURCE_DIR}" LIBOMP_VERSION_BUILD)
