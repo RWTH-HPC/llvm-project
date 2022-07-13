@@ -11,11 +11,15 @@
 ## Build
 Compile with
 
-```shell
+```bash
+# create build folders
 mkdir -p BUILD
 mkdir -p INSTALL
+
+# set tmp path to installation directory
 INSTALL_DIR=$(pwd)/INSTALL
 
+# create Makefiles
 cd BUILD
 cmake \
     -DCMAKE_BUILD_TYPE=Release \
@@ -24,6 +28,7 @@ cmake \
     -DLIBOMP_USE_NUMA_DEVICE_AFFINITY=1 \
     -DLIBOMP_HWLOC_INSTALL_DIR=<path/to/hwloc/install> ..
 
+# build and install
 make -j12
 make install
 ```
