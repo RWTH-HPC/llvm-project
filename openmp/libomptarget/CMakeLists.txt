@@ -53,7 +53,11 @@ set (LIBOMPTARGET_TESTED_PLUGINS "")
 # Check whether using debug mode. In debug mode, allow dumping progress
 # messages at runtime by default. Otherwise, it can be enabled
 # independently using the LIBOMPTARGET_ENABLE_DEBUG option.
-string( TOLOWER "${CMAKE_BUILD_TYPE}" LIBOMPTARGET_CMAKE_BUILD_TYPE)
+if (NOT LIBOMPTARGET_CMAKE_BUILD_TYPE)
+  string( TOLOWER "${CMAKE_BUILD_TYPE}" LIBOMPTARGET_CMAKE_BUILD_TYPE)
+else()
+  string( TOLOWER "${LIBOMPTARGET_CMAKE_BUILD_TYPE}" LIBOMPTARGET_CMAKE_BUILD_TYPE)
+endif()
 if(LIBOMPTARGET_CMAKE_BUILD_TYPE MATCHES debug)
   option(LIBOMPTARGET_ENABLE_DEBUG "Allow debug output with the environment variable LIBOMPTARGET_DEBUG=1" ON)
 else()
