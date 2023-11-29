@@ -16,6 +16,7 @@
 #define TSAN_INTERFACE_H
 
 #include <sanitizer_common/sanitizer_internal_defs.h>
+#include <stdint.h>
 using __sanitizer::uptr;
 using __sanitizer::tid_t;
 
@@ -53,11 +54,15 @@ SANITIZER_INTERFACE_ATTRIBUTE void __tsan_unaligned_read2(const void *addr);
 SANITIZER_INTERFACE_ATTRIBUTE void __tsan_unaligned_read4(const void *addr);
 SANITIZER_INTERFACE_ATTRIBUTE void __tsan_unaligned_read8(const void *addr);
 SANITIZER_INTERFACE_ATTRIBUTE void __tsan_unaligned_read16(const void *addr);
+SANITIZER_INTERFACE_ATTRIBUTE void __tsan_unaligned_read32(const void *addr);
+SANITIZER_INTERFACE_ATTRIBUTE void __tsan_unaligned_read64(const void *addr);
 
 SANITIZER_INTERFACE_ATTRIBUTE void __tsan_unaligned_write2(void *addr);
 SANITIZER_INTERFACE_ATTRIBUTE void __tsan_unaligned_write4(void *addr);
 SANITIZER_INTERFACE_ATTRIBUTE void __tsan_unaligned_write8(void *addr);
 SANITIZER_INTERFACE_ATTRIBUTE void __tsan_unaligned_write16(void *addr);
+SANITIZER_INTERFACE_ATTRIBUTE void __tsan_unaligned_write32(void *addr);
+SANITIZER_INTERFACE_ATTRIBUTE void __tsan_unaligned_write64(void *addr);
 
 SANITIZER_INTERFACE_ATTRIBUTE void __tsan_read1_pc(void *addr, void *pc);
 SANITIZER_INTERFACE_ATTRIBUTE void __tsan_read2_pc(void *addr, void *pc);

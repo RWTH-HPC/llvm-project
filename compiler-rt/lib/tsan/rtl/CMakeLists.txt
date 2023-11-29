@@ -1,7 +1,10 @@
 include_directories(../..)
 
 set(TSAN_RTL_CFLAGS ${TSAN_CFLAGS})
+set(TSAN_SIMD_RTL_CFLAGS "")
 append_list_if(COMPILER_RT_HAS_MSSE4_2_FLAG -msse4.2 TSAN_RTL_CFLAGS)
+append_list_if(COMPILER_RT_HAS_MAVX2_FLAG -mavx2 TSAN_SIMD_RTL_CFLAGS)
+append_list_if(COMPILER_RT_HAS_MAVX512F_FLAG -mavx512f TSAN_SIMD_RTL_CFLAGS)
 append_list_if(SANITIZER_LIMIT_FRAME_SIZE -Wframe-larger-than=530
                TSAN_RTL_CFLAGS)
 append_list_if(COMPILER_RT_HAS_WGLOBAL_CONSTRUCTORS_FLAG -Wglobal-constructors
@@ -237,6 +240,11 @@ else()
     else()
       set(TSAN_ASM_SOURCES)
     endif()
+    add_compiler_rt_object_libraries(RTTSanSimd
+        ARCHS ${arch}
+        SOURCES tsan_interface_simd.cpp
+        ADDITIONAL_HEADERS tsan_interface_simd.h 
+        CFLAGS ${TSAN_RTL_CFLAGS} ${TSAN_SIMD_RTL_CFLAGS})
     add_compiler_rt_runtime(clang_rt.tsan
       STATIC
       ARCHS ${arch}
@@ -247,6 +255,7 @@ else()
               $<TARGET_OBJECTS:RTSanitizerCommonCoverage.${arch}>
               $<TARGET_OBJECTS:RTSanitizerCommonSymbolizer.${arch}>
               $<TARGET_OBJECTS:RTUbsan.${arch}>
+              $<TARGET_OBJECTS:RTTSanSimd.${arch}>
       ADDITIONAL_HEADERS ${TSAN_HEADERS}
       CFLAGS ${TSAN_RTL_CFLAGS}
       PARENT_TARGET tsan)
@@ -270,6 +279,7 @@ else()
               $<TARGET_OBJECTS:RTSanitizerCommonCoverage.${arch}>
               $<TARGET_OBJECTS:RTSanitizerCommonSymbolizer.${arch}>
               $<TARGET_OBJECTS:RTUbsan.${arch}>
+              $<TARGET_OBJECTS:RTTSanSimd.${arch}>
       ADDITIONAL_HEADERS ${TSAN_HEADERS}
       CFLAGS ${TSAN_RTL_DYNAMIC_CFLAGS}
       DEFS SANITIZER_SHARED
