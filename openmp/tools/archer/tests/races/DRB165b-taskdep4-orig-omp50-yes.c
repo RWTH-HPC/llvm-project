@@ -32,7 +32,7 @@ void foo(){
   #pragma omp task shared(y, sem)
   {
     OMPT_SIGNAL(sem);
-  y--;                                                // 2nd child task
+    y--;                                                // 2nd child task
   }
 
   #pragma omp taskwait depend(in: x)                  // 1st taskwait

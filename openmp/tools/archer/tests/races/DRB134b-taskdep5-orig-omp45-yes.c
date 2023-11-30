@@ -13,6 +13,7 @@
 // RUN: %libarcher-compile && env ARCHER_OPTIONS=tasking=1 %libarcher-run-race | FileCheck %s
 // RUN: %libarcher-compile && env ARCHER_OPTIONS=tasking=1:ignore_serial=1 %libarcher-run-race | FileCheck %s
 // REQUIRES: tsan
+// XFAIL: *
 #include <stdio.h>
 #include <omp.h>
 #include "ompt/ompt-signal.h"

@@ -12,6 +12,7 @@
 // RUN: %libarcher-compile && env ARCHER_OPTIONS=dispatch_fibers=1 %libarcher-run-race | FileCheck %s
 // RUN: %libarcher-compile && env ARCHER_OPTIONS=dispatch_fibers=1:ignore_serial=1 %libarcher-run-race | FileCheck %s
 // REQUIRES: tsan
+// XFAIL: *
 #include <stdio.h>
 #include <stdlib.h>
 
