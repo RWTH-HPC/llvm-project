@@ -345,8 +345,7 @@ ToolChain::RuntimeLibType Linux::GetDefaultRuntimeLibType() const {
 unsigned Linux::GetDefaultDwarfVersion() const {
   if (getTriple().isAndroid())
     return 4;
-  return 4;
-//  return ToolChain::GetDefaultDwarfVersion();
+  return ToolChain::GetDefaultDwarfVersion();
 }
 
 ToolChain::CXXStdlibType Linux::GetDefaultCXXStdlibType() const {
