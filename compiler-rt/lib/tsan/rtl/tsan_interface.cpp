@@ -81,6 +81,12 @@ SANITIZER_INTERFACE_ATTRIBUTE
 void __tsan_set_fiber_name(void *fiber, const char *name) {
   ThreadSetName(static_cast<ThreadState *>(fiber), name);
 }
+
+SANITIZER_INTERFACE_ATTRIBUTE
+int __tsan_get_fiber_stacksize(void *fiber) {
+  auto thr = static_cast<ThreadState *>(fiber);
+  return thr->shadow_stack ? thr->shadow_stack_pos - thr->shadow_stack : 0;
+}
 }  // extern "C"
 
 void __tsan_acquire(void *addr) {

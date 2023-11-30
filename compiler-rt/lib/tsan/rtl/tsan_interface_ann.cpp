@@ -157,6 +157,16 @@ void INTERFACE_ATTRIBUTE AnnotateHappensAfter(char *f, int l, uptr addr) {
   Acquire(thr, pc, addr);
 }
 
+void INTERFACE_ATTRIBUTE AnnotateHappensBeforeStore(char *f, int l, uptr addr) {
+  SCOPED_ANNOTATION(AnnotateHappensBefore);
+  ReleaseStore(thr, pc, addr);
+}
+
+void INTERFACE_ATTRIBUTE AnnotateHappensAfterStore(char *f, int l, uptr addr) {
+  SCOPED_ANNOTATION(AnnotateHappensAfter);
+  AcquireStore(thr, pc, addr);
+}
+
 void INTERFACE_ATTRIBUTE AnnotateCondVarSignal(char *f, int l, uptr cv) {
 }
 
@@ -211,6 +221,8 @@ void INTERFACE_ATTRIBUTE AnnotateFlushState(char *f, int l) {
 
 void INTERFACE_ATTRIBUTE AnnotateNewMemory(char *f, int l, uptr mem,
                                            uptr size) {
+  SCOPED_ANNOTATION(AnnotateNewMemory);
+  OnUserAlloc(thr, pc, mem, size, false);
 }
 
 void INTERFACE_ATTRIBUTE AnnotateNoOp(char *f, int l, uptr mem) {
@@ -294,6 +306,16 @@ void INTERFACE_ATTRIBUTE AnnotateIgnoreSyncBegin(char *f, int l) {
 void INTERFACE_ATTRIBUTE AnnotateIgnoreSyncEnd(char *f, int l) {
   SCOPED_ANNOTATION(AnnotateIgnoreSyncEnd);
   ThreadIgnoreSyncEnd(thr);
+}
+
+void INTERFACE_ATTRIBUTE AnnotateIgnoreInterceptorsBegin(char *f, int l) {
+  SCOPED_ANNOTATION(AnnotateIgnoreSyncBegin);
+  ThreadIgnoreInterceptorsBegin(thr, pc);
+}
+
+void INTERFACE_ATTRIBUTE AnnotateIgnoreInterceptorsEnd(char *f, int l) {
+  SCOPED_ANNOTATION(AnnotateIgnoreSyncEnd);
+  ThreadIgnoreInterceptorsEnd(thr);
 }
 
 void INTERFACE_ATTRIBUTE AnnotatePublishMemoryRange(

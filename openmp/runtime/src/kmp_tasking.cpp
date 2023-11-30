@@ -1849,8 +1849,9 @@ static void __kmp_invoke_task(kmp_int32 gtid, kmp_task_t *task,
       __ompt_task_start(task, current_task, gtid);
 #endif
 #if OMPT_SUPPORT && OMPT_OPTIONAL
-    if (UNLIKELY(ompt_enabled.ompt_callback_dispatch &&
-                 taskdata->ompt_task_info.dispatch_chunk.iterations > 0)) {
+//    if (UNLIKELY(ompt_enabled.ompt_callback_dispatch &&
+//                 taskdata->ompt_task_info.dispatch_chunk.iterations > 0)) {
+    if (UNLIKELY(ompt_enabled.ompt_callback_dispatch)) {
       ompt_data_t instance = ompt_data_none;
       instance.ptr = &(taskdata->ompt_task_info.dispatch_chunk);
       ompt_team_info_t *team_info = __ompt_get_teaminfo(0, NULL);
