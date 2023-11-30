@@ -463,6 +463,7 @@ int __ompt_get_task_info_internal(int ancestor_level, int *type,
 }
 
 int __ompt_get_task_memory_internal(void **addr, size_t *size, int blocknum) {
+  *size = 0;
   if (blocknum != 0)
     return 0; // support only a single block
 
@@ -476,7 +477,14 @@ int __ompt_get_task_memory_internal(void **addr, size_t *size, int blocknum) {
   if (taskdata->td_flags.tasktype != TASK_EXPLICIT)
     return 0; // support only explicit task
 
-  void *ret_addr;
+  if (taskdata->td_size_alloc < 0)
+    return 0;
+
+  *addr = taskdata;
+  *size = taskdata->td_size_alloc;
+  return 0;
+
+/*  void *ret_addr;
   int64_t ret_size = taskdata->td_size_alloc - sizeof(kmp_taskdata_t);
 
   // kmp_task_t->data1 is an optional member
@@ -491,7 +499,7 @@ int __ompt_get_task_memory_internal(void **addr, size_t *size, int blocknum) {
 
   *addr = ret_addr;
   *size = (size_t)ret_size;
-  return 1;
+  return 1;*/
 }
 
 //----------------------------------------------------------
