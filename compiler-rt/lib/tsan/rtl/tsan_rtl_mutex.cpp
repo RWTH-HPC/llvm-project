@@ -452,6 +452,23 @@ void Acquire(ThreadState *thr, uptr pc, uptr addr) {
   thr->clock.Acquire(s->clock);
 }
 
+void AcquireStore(ThreadState *thr, uptr pc, uptr addr) {
+  DPrintf("#%d: AcquireStore %zx\n", thr->tid, addr);
+  if (thr->ignore_sync)
+    return;
+  {
+    auto s = ctx->metamap.GetSyncIfExists(addr);
+    if (!s)
+      return;
+    SlotLocker locker(thr);
+    if (!s->clock)
+      return;
+    ReadLock lock(&s->mtx);
+    thr->clock.AcquireStore(s->clock);
+  }
+  IncrementEpoch(thr);
+}
+
 void AcquireGlobal(ThreadState *thr) {
   DPrintf("#%d: AcquireGlobal\n", thr->tid);
   if (thr->ignore_sync)

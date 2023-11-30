@@ -26,6 +26,7 @@ class VectorClock {
 
   void Reset();
   void Acquire(const VectorClock* src);
+  void AcquireStore(const VectorClock* src);
   void Release(VectorClock** dstp) const;
   void ReleaseStore(VectorClock** dstp) const;
   void ReleaseStoreAcquire(VectorClock** dstp);

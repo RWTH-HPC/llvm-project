@@ -589,6 +589,7 @@ void MutexRepair(ThreadState *thr, uptr pc, uptr addr);  // call on EOWNERDEAD
 void MutexInvalidAccess(ThreadState *thr, uptr pc, uptr addr);
 
 void Acquire(ThreadState *thr, uptr pc, uptr addr);
+void AcquireStore(ThreadState *thr, uptr pc, uptr addr);
 // AcquireGlobal synchronizes the current thread with all other threads.
 // In terms of happens-before relation, it draws a HB edge from all threads
 // (where they happen to execute right now) to the current thread. We use it to

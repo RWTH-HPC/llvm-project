@@ -51,6 +51,12 @@ void VectorClock::Acquire(const VectorClock* src) {
 #endif
 }
 
+void VectorClock::AcquireStore(const VectorClock* src) {
+  if (!src)
+    return;
+  *this = *src;
+}
+
 static VectorClock* AllocClock(VectorClock** dstp) {
   if (UNLIKELY(!*dstp))
     *dstp = New<VectorClock>();
