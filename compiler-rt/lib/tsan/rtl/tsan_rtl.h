@@ -378,6 +378,7 @@ struct Context {
   uptr mapped_shadow_begin;
   uptr mapped_shadow_end;
 #endif
+  bool (*onReportFn)(const ReportDesc *, bool, int){nullptr};
 };
 
 extern Context *ctx;  // The one and the only global runtime context.

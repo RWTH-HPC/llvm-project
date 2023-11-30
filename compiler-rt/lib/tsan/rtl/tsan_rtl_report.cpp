@@ -10,6 +10,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "llvm/Config/llvm-config.h"
 #include "sanitizer_common/sanitizer_common.h"
 #include "sanitizer_common/sanitizer_libc.h"
 #include "sanitizer_common/sanitizer_placement_new.h"
@@ -38,6 +39,8 @@ bool OnReport(const ReportDesc *rep, bool suppressed);
 SANITIZER_WEAK_CXX_DEFAULT_IMPL
 bool OnReport(const ReportDesc *rep, bool suppressed) {
   (void)rep;
+  if (ctx->onReportFn)
+    return (*ctx->onReportFn)(rep, suppressed, LLVM_VERSION_MAJOR);
   return suppressed;
 }
 #endif
