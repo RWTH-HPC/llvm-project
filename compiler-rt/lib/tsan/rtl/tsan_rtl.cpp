@@ -1081,6 +1081,26 @@ void ThreadIgnoreSyncEnd(ThreadState *thr) {
 #endif
 }
 
+void ThreadIgnoreInterceptorsBegin(ThreadState *thr, uptr pc) {
+  DPrintf("#%d: ThreadIgnoreInterceptorsBegin\n", thr->tid);
+#if !SANITIZER_GO
+  thr->ignore_interceptors++;
+  CHECK_GT(thr->ignore_interceptors, 0);
+  if (pc && !ctx->after_multithreaded_fork)
+    thr->sync_ignore_set.Add(CurrentStackId(thr, pc));
+#endif
+}
+
+void ThreadIgnoreInterceptorsEnd(ThreadState *thr) {
+  DPrintf("#%d: ThreadIgnoreInterceptorsEnd\n", thr->tid);
+#if !SANITIZER_GO
+  CHECK_GT(thr->ignore_interceptors, 0);
+  thr->ignore_interceptors--;
+  if (thr->ignore_interceptors == 0)
+    thr->sync_ignore_set.Reset();
+#endif
+}
+
 bool MD5Hash::operator==(const MD5Hash &other) const {
   return hash[0] == other.hash[0] && hash[1] == other.hash[1];
 }
