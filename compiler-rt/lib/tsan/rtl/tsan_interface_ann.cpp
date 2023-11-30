@@ -457,4 +457,10 @@ void __tsan_mutex_post_divert(void *addr, unsigned flagz) {
   ThreadIgnoreBegin(thr, 0);
   ThreadIgnoreSyncBegin(thr, 0);
 }
+
+INTERFACE_ATTRIBUTE
+void __tsan_register_on_report(bool (*fn)(const ReportDesc *, bool, int)){
+  ctx->onReportFn = fn;
+}
+
 }  // extern "C"

@@ -28,6 +28,7 @@ __tsan_destroy_fiber
 __tsan_switch_to_fiber
 __tsan_set_fiber_name
 __tsan_get_fiber_stacksize
+__tsan_register_on_report
 __ubsan_*
 Annotate*
 WTFAnnotate*
