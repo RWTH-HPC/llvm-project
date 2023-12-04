@@ -25,7 +25,7 @@ int main(int argc, char *argv[]) {
   int i;
   const int len = 10;
 
-#pragma omp parallel for num_threads(NUM_THREADS) shared(vars)                  \
+#pragma omp parallel for num_threads(NUM_THREADS) shared(vars)                 \
     schedule(dynamic, 1)
   for (i = 0; i < len; i++) {
     vars[omp_get_thread_num()]++;

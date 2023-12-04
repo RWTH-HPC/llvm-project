@@ -30,7 +30,6 @@
 #include <unistd.h>
 #include <unordered_map>
 #include <vector>
-#include <dlfcn.h>
 
 #include "omp-tools.h"
 
@@ -509,17 +508,17 @@ struct TaskData final : DataPoolEntry<TaskData> {
   size_t PrivateDataSize{0};
   void *PrivateDataAddr{nullptr};
 
-  std::vector<void*> DispatchFibers;
-  std::size_t DispatchFiberIdx {0};
-  void* DispatchOriginalFiber {nullptr};
+  std::vector<void *> DispatchFibers;
+  std::size_t DispatchFiberIdx{0};
+  void *DispatchOriginalFiber{nullptr};
 
-  void activateDispatchFibers(const std::size_t size, void* fiber = nullptr) {
+  void activateDispatchFibers(const std::size_t size, void *fiber = nullptr) {
     DispatchFibers.resize(size);
     DispatchOriginalFiber = fiber;
-    for (auto& RFiber: DispatchFibers)
+    for (auto &RFiber : DispatchFibers)
       RFiber = TsanCreateFiber(1);
   }
-   
+
   void *switchDispatchFiber() {
     void *Res = DispatchFibers.at(DispatchFiberIdx);
     DispatchFiberIdx = (DispatchFiberIdx + 1) % DispatchFibers.size();
@@ -530,7 +529,7 @@ struct TaskData final : DataPoolEntry<TaskData> {
   void deactivateDispatchFibers() {
     if (DispatchOriginalFiber)
       TsanSwitchToFiber(DispatchOriginalFiber, 1);
-    for (auto& Fiber: DispatchFibers)
+    for (auto &Fiber : DispatchFibers)
       TsanDestroyFiber(Fiber);
   }
 
@@ -691,8 +690,8 @@ static void ompt_tsan_thread_begin(ompt_thread_t thread_type,
   TsanNewMemory(DependencyDataPool::ThreadDataPool,
                 sizeof(DependencyDataPool::ThreadDataPool));
   if (archer_flags->tasking || archer_flags->dispatch_fibers) {
-      TsanGetCurrentFiber();
-   }
+    TsanGetCurrentFiber();
+  }
 
   thread_data->value = my_next_id();
 }
@@ -740,35 +739,41 @@ static void ompt_tsan_parallel_end(ompt_data_t *parallel_data,
 #endif
 }
 
-static void ompt_tsan_dispatch(ompt_data_t *parallel_data, ompt_data_t *task_data,
-                               ompt_dispatch_t kind, ompt_data_t instance) {
-    auto *Data = ToTaskData(task_data);
-    switch(kind) {
-        case ompt_dispatch_section:
-        case ompt_dispatch_ws_loop_chunk:
-        case ompt_dispatch_distribute_chunk:
-          Data->switchDispatchFiber();
-            break;
-        case ompt_dispatch_taskloop_chunk:
-        case ompt_dispatch_iteration:
-            break;
-    }
+static void ompt_tsan_dispatch(ompt_data_t *parallel_data,
+                               ompt_data_t *task_data, ompt_dispatch_t kind,
+                               ompt_data_t instance) {
+  auto *Data = ToTaskData(task_data);
+  switch (kind) {
+  case ompt_dispatch_section:
+  case ompt_dispatch_ws_loop_chunk:
+  case ompt_dispatch_distribute_chunk:
+    Data->switchDispatchFiber();
+    break;
+  case ompt_dispatch_taskloop_chunk:
+  case ompt_dispatch_iteration:
+    break;
+  }
 }
 
-static void ompt_tsan_work(ompt_work_t work_type, ompt_scope_endpoint_t endpoint,
+static void ompt_tsan_work(ompt_work_t work_type,
+                           ompt_scope_endpoint_t endpoint,
                            ompt_data_t *parallel_data, ompt_data_t *task_data,
                            uint64_t count, const void *codeptr_ra) {
-    auto *Data = ToTaskData(task_data);
-    switch(endpoint) {
-    case ompt_scope_begin:
-        Data->activateDispatchFibers(std::min(archer_flags->dispatch_fibers == -1 ? static_cast<uint64_t>(13) : count, count), TsanGetCurrentFiber());
-        break;
-    case ompt_scope_end:
-        Data->deactivateDispatchFibers();
-        break;
-    case ompt_scope_beginend:
-        break;
-    }
+  auto *Data = ToTaskData(task_data);
+  switch (endpoint) {
+  case ompt_scope_begin:
+    Data->activateDispatchFibers(std::min(archer_flags->dispatch_fibers == -1
+                                              ? static_cast<uint64_t>(13)
+                                              : count,
+                                          count),
+                                 TsanGetCurrentFiber());
+    break;
+  case ompt_scope_end:
+    Data->deactivateDispatchFibers();
+    break;
+  case ompt_scope_beginend:
+    break;
+  }
 }
 
 static void ompt_tsan_implicit_task(ompt_scope_endpoint_t endpoint,
@@ -1111,7 +1116,6 @@ static void ompt_tsan_task_schedule(ompt_data_t *first_task_data,
   if (prior_task_status == ompt_taskwait_complete)
     acquireDependencies(FromTask);
 
-
   // Legacy handling for missing reduction callback
   if (hasReductionCallback < ompt_set_always && FromTask &&
       FromTask->InBarrier) {
@@ -1341,9 +1345,9 @@ static int ompt_tsan_initialize(ompt_function_lookup_t lookup, int device_num,
   findTsanFunction(__tsan_func_entry, (void (*)(const void *)));
   findTsanFunction(__tsan_func_exit, (void (*)(void)));
   findTsanFunction(__tsan_create_fiber, (void *(*)(unsigned int)));
-  findTsanFunction(__tsan_destroy_fiber, (void (*)(void*)));
+  findTsanFunction(__tsan_destroy_fiber, (void (*)(void *)));
   findTsanFunction(__tsan_get_current_fiber, (void *(*)()));
-  findTsanFunction(__tsan_switch_to_fiber, (void (*)(void*, unsigned int)));
+  findTsanFunction(__tsan_switch_to_fiber, (void (*)(void *, unsigned int)));
 
   SET_CALLBACK(thread_begin);
   SET_CALLBACK(thread_end);
