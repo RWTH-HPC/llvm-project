@@ -15,11 +15,11 @@
 #ifndef TSAN_INTERFACE_SIMD_H
 #define TSAN_INTERFACE_SIMD_H
 
-#include <sanitizer_common/sanitizer_internal_defs.h>
 #include <immintrin.h>
+#include <sanitizer_common/sanitizer_internal_defs.h>
 #include <stdint.h>
-using __sanitizer::uptr;
 using __sanitizer::tid_t;
+using __sanitizer::uptr;
 
 // This header should NOT include any other headers.
 // All functions in this header are extern "C" and start with __tsan_.
@@ -37,11 +37,10 @@ SANITIZER_INTERFACE_ATTRIBUTE void __tsan_gather_vector8(__m512i vaddr,
                                                          int width,
                                                          uint8_t mask);
 #  endif /*__AVX512F__*/
-#endif  // SANITIZER_GO
+#endif   // SANITIZER_GO
 
 #ifdef __cplusplus
 }  // extern "C"
 #endif
 
 #endif /*TSAN_INTERFACE_SIMD_H*/
-

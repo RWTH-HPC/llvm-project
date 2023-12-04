@@ -41,5 +41,3 @@ extern "C" void __tsan_gather_vector8(__m512i vaddr, int size, uint8_t mask) {
       UnalignedMemoryAccess(thr, pc, (uptr)addr[i], size, kAccessRead);
 }
 #endif /*__AVX512F__*/
-
-

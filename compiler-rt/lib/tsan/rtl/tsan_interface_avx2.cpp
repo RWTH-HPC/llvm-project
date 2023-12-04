@@ -35,4 +35,3 @@ extern "C" void __tsan_gather_vector4(__m256i vaddr, int size, uint8_t mask) {
       UnalignedMemoryAccess(thr, pc, (uptr)addr[i], size, kAccessRead);
 }
 #endif /*__AVX__*/
-

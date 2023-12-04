@@ -10,13 +10,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-// RUN: %libarcher-compile -DTYPE=float && %libarcher-run-race | FileCheck --check-prefix=FLOAT %s
-// RUN: %libarcher-compile -DTYPE=double && %libarcher-run-race | FileCheck --check-prefix=DOUBLE %s
-// REQUIRES: tsan
+// RUN: %libarcher-compile -DTYPE=float && %libarcher-run-race | FileCheck
+// --check-prefix=FLOAT %s RUN: %libarcher-compile -DTYPE=double &&
+// %libarcher-run-race | FileCheck --check-prefix=DOUBLE %s REQUIRES: tsan
 
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <math.h>
 
 #ifndef TYPE
 #define TYPE double

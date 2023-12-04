@@ -41,14 +41,13 @@
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/MathExtras.h"
-#include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/Regex.h"
+#include "llvm/Support/raw_ostream.h"
 #include "llvm/Transforms/Instrumentation.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Transforms/Utils/EscapeEnumerator.h"
 #include "llvm/Transforms/Utils/Local.h"
 #include "llvm/Transforms/Utils/ModuleUtils.h"
-
 
 using namespace llvm;
 
@@ -881,9 +880,8 @@ int ThreadSanitizer::getMemoryAccessFuncIndex(Type *OrigTy, Value *Addr,
                                               const DataLayout &DL) {
   assert(OrigTy->isSized());
   uint32_t TypeSize = DL.getTypeStoreSizeInBits(OrigTy);
-  if (TypeSize != 8  && TypeSize != 16 &&
-      TypeSize != 32 && TypeSize != 64 && TypeSize != 128 &&
-      TypeSize != 256 && TypeSize != 512) {
+  if (TypeSize != 8 && TypeSize != 16 && TypeSize != 32 && TypeSize != 64 &&
+      TypeSize != 128 && TypeSize != 256 && TypeSize != 512) {
     NumAccessesWithBadSize++;
     // Ignore all unusual sizes.
     return -1;
