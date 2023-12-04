@@ -1,4 +1,4 @@
-//===-- tsan_interface_simd.h ----------------------------------------*- C++ -*-===//
+//===-- tsan_interface_avx512.h ----------------------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -29,14 +29,6 @@ extern "C" {
 #endif
 
 #if !SANITIZER_GO
-#  ifdef __AVX__
-SANITIZER_INTERFACE_ATTRIBUTE void __tsan_scatter_vector4(__m256i vaddr,
-                                                          int width,
-                                                          uint8_t mask);
-SANITIZER_INTERFACE_ATTRIBUTE void __tsan_gather_vector4(__m256i vaddr,
-                                                         int width,
-                                                         uint8_t mask);
-#  endif /*__AVX__*/
 #  ifdef __AVX512F__
 SANITIZER_INTERFACE_ATTRIBUTE void __tsan_scatter_vector8(__m512i vaddr,
                                                           int width,
@@ -45,7 +37,6 @@ SANITIZER_INTERFACE_ATTRIBUTE void __tsan_gather_vector8(__m512i vaddr,
                                                          int width,
                                                          uint8_t mask);
 #  endif /*__AVX512F__*/
-
 #endif  // SANITIZER_GO
 
 #ifdef __cplusplus
@@ -53,3 +44,4 @@ SANITIZER_INTERFACE_ATTRIBUTE void __tsan_gather_vector8(__m512i vaddr,
 #endif
 
 #endif /*TSAN_INTERFACE_SIMD_H*/
+
