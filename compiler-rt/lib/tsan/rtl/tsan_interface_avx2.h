@@ -12,8 +12,8 @@
 // module.
 // This header can be included by the instrumented program or by TSan tests.
 //===----------------------------------------------------------------------===//
-#ifndef TSAN_INTERFACE_SIMD_H
-#define TSAN_INTERFACE_SIMD_H
+#ifndef TSAN_INTERFACE_AVX2_H
+#define TSAN_INTERFACE_AVX2_H
 
 #include <immintrin.h>
 #include <sanitizer_common/sanitizer_internal_defs.h>
@@ -43,4 +43,4 @@ SANITIZER_INTERFACE_ATTRIBUTE void __tsan_gather_vector4(__m256i vaddr,
 }  // extern "C"
 #endif
 
-#endif /*TSAN_INTERFACE_SIMD_H*/
+#endif /*TSAN_INTERFACE_AVX2_H*/

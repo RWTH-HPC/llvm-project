@@ -2,8 +2,6 @@ include_directories(../..)
 
 set(TSAN_RTL_CFLAGS ${TSAN_CFLAGS})
 append_list_if(COMPILER_RT_HAS_MSSE4_2_FLAG -msse4.2 TSAN_RTL_CFLAGS)
-append_list_if(COMPILER_RT_HAS_MAVX2_FLAG -mavx2 TSAN_SIMD_RTL_CFLAGS)
-append_list_if(COMPILER_RT_HAS_MAVX512F_FLAG -mavx512f TSAN_SIMD_RTL_CFLAGS)
 append_list_if(SANITIZER_LIMIT_FRAME_SIZE -Wframe-larger-than=530
                TSAN_RTL_CFLAGS)
 append_list_if(COMPILER_RT_HAS_WGLOBAL_CONSTRUCTORS_FLAG -Wglobal-constructors
@@ -239,7 +237,6 @@ else()
     else()
       set(TSAN_ASM_SOURCES)
     endif()
-    message(status "COMPILER_RT_HAS_MAVX512F_FLAG: ${COMPILER_RT_HAS_MAVX512F_FLAG}")
     add_compiler_rt_object_libraries(RTTSanAVX2
         ARCHS ${arch}
         SOURCES tsan_interface_avx2.cpp

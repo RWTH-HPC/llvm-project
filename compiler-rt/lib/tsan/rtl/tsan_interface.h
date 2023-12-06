@@ -16,7 +16,6 @@
 #define TSAN_INTERFACE_H
 
 #include <sanitizer_common/sanitizer_internal_defs.h>
-#include <stdint.h>
 using __sanitizer::uptr;
 using __sanitizer::tid_t;
 
