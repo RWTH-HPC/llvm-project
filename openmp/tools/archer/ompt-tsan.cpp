@@ -627,6 +627,7 @@ struct TaskData final : DataPoolEntry<TaskData> {
       TsanDestroyFiber(Fiber);
     }
     CodePtr = nullptr;
+    Fiber = nullptr;
     InBarrier = false;
     TaskType = 0;
     execution = 0;
