@@ -54,6 +54,8 @@ if (LIBOMPTARGET_CAN_LINK_LIBCUDA AND NOT LIBOMPTARGET_FORCE_DLOPEN_LIBCUDA)
     MemoryManager
     ${LIBOMPTARGET_DEP_CUDA_DRIVER_LIBRARIES}
     ${OPENMP_PTHREAD_LIB}
+    ${LIBOMP_HWLOC_LIBRARY}
+    ${CUDA_cudart_static_LIBRARY}
     "-Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/../exports"
     "-Wl,-z,defs"
 
@@ -76,6 +78,8 @@ else()
     elf_common
     MemoryManager
     ${OPENMP_PTHREAD_LIB}
+    ${LIBOMP_HWLOC_LIBRARY}
+    ${CUDA_cudart_static_LIBRARY}
     "-Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/../exports"
     "-Wl,-z,defs"
 
@@ -92,14 +96,6 @@ set_target_properties(omptarget.rtl.cuda PROPERTIES
 target_include_directories(omptarget.rtl.cuda PRIVATE
   ${LIBOMPTARGET_INCLUDE_DIR}
 )
-
-if (LIBOMP_USE_NUMA_DEVICE_AFFINITY)
-  add_library(hwloc_lib SHARED IMPORTED)
-  set_target_properties(hwloc_lib PROPERTIES
-      IMPORTED_LOCATION "${LIBOMP_HWLOC_INSTALL_DIR}/lib/libhwloc.so"
-      INTERFACE_INCLUDE_DIRECTORIES "${LIBOMP_HWLOC_INSTALL_DIR}/include")
-  target_link_libraries(omptarget.rtl.cuda hwloc_lib ${CUDA_cudart_static_LIBRARY})
-endif()
 
 # Report to the parent scope that we are building a plugin for CUDA.
 # This controls whether tests are run for the nvptx offloading target

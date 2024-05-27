@@ -26,7 +26,7 @@
 
 #if OMPT_USE_NUMA_DEVICE_AFFINITY
 EXTERN int omp_get_devices_in_order(int n_desired, int *dev_ids) {
-  PM->RTLsMtx->lock();
+  PM->RTLsMtx.lock();
 
   // get numa node
   int numa_id = numa_node_of_cpu(sched_getcpu());
@@ -35,7 +35,7 @@ EXTERN int omp_get_devices_in_order(int n_desired, int *dev_ids) {
   int i = 0;
   int devices_found = 0;
   while (i < PM->Devices.size()) {
-    auto &R = PM->Devices[i].RTL;
+    auto &R = PM->Devices[i]->RTL;
     int const *rtl_devices_in_order;
 
     if (R->numa_devices_in_order) {
@@ -48,7 +48,7 @@ EXTERN int omp_get_devices_in_order(int n_desired, int *dev_ids) {
     i += R->NumberOfDevices;
   }
 
-  PM->RTLsMtx->unlock();
+  PM->RTLsMtx.unlock();
 
   return devices_found;
 }
