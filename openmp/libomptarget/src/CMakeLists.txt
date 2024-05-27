@@ -38,6 +38,10 @@ add_llvm_library(omptarget
 )
 target_include_directories(omptarget PRIVATE ${LIBOMPTARGET_INCLUDE_DIR})
 
+if (LIBOMP_USE_NUMA_DEVICE_AFFINITY)
+  target_link_libraries(omptarget numa)
+endif()
+
 # libomptarget.so needs to be aware of where the plugins live as they
 # are now separated in the build directory.
 set_target_properties(omptarget PROPERTIES INSTALL_RPATH "$ORIGIN" BUILD_RPATH "$ORIGIN:${CMAKE_CURRENT_BINARY_DIR}/..")

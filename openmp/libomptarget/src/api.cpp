@@ -20,6 +20,40 @@
 #include <cstring>
 #include <mutex>
 
+#if OMPT_USE_NUMA_DEVICE_AFFINITY
+#include <sched.h>
+#endif // OMPT_USE_NUMA_DEVICE_AFFINITY
+
+#if OMPT_USE_NUMA_DEVICE_AFFINITY
+EXTERN int omp_get_devices_in_order(int n_desired, int *dev_ids) {
+  PM->RTLsMtx->lock();
+
+  // get numa node
+  int numa_id = numa_node_of_cpu(sched_getcpu());
+
+  // Iterate over RTLs
+  int i = 0;
+  int devices_found = 0;
+  while (i < PM->Devices.size()) {
+    auto &R = PM->Devices[i].RTL;
+    int const *rtl_devices_in_order;
+
+    if (R->numa_devices_in_order) {
+      R->numa_devices_in_order(numa_id, &rtl_devices_in_order);
+      int j = 0;
+      while (j < R->NumberOfDevices && devices_found < n_desired)
+          dev_ids[devices_found++] = rtl_devices_in_order[j++];
+    }
+
+    i += R->NumberOfDevices;
+  }
+
+  PM->RTLsMtx->unlock();
+
+  return devices_found;
+}
+#endif // OMPT_USE_NUMA_DEVICE_AFFINITY
+
 EXTERN int omp_get_num_devices(void) {
   TIMESCOPE();
   PM->RTLsMtx.lock();

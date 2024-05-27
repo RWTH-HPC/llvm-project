@@ -22,10 +22,21 @@
 #include <string>
 #include <vector>
 
+#if OMPT_USE_NUMA_DEVICE_AFFINITY
+#include <hwloc/cudart.h>
+#if HWLOC_API_VERSION < 0x00020000
+#error "hwloc too old, version >= 2.0 required"
+#endif // HWLOC_API_VERSION
+#endif // OMPT_USE_NUMA_DEVICE_AFFINITY
+
 #include "Debug.h"
 #include "DeviceEnvironment.h"
 #include "omptarget.h"
 #include "omptargetplugin.h"
+
+#if OMPT_USE_NUMA_DEVICE_AFFINITY
+#include "omptargetnuma.h"
+#endif // OMPT_USE_NUMA_DEVICE_AFFINITY
 
 #define TARGET_NAME CUDA
 #define DEBUG_PREFIX "Target " GETNAME(TARGET_NAME) " RTL"
@@ -335,6 +346,11 @@ class DeviceRTLTy {
   // Amount of dynamic shared memory to use at launch.
   uint64_t DynamicMemorySize;
 
+#if OMPT_USE_NUMA_DEVICE_AFFINITY
+  bool HwlocAvailable;
+  std::vector<std::vector<int32_t>> NumaDeviceTable;
+#endif // OMPT_USE_NUMA_DEVICE_AFFINITY
+
   /// Number of initial streams for each device.
   int NumInitialStreams = 32;
 
@@ -471,6 +487,23 @@ class DeviceRTLTy {
     E.Table.EntriesBegin = E.Table.EntriesEnd = nullptr;
   }
 
+#if OMPT_USE_NUMA_DEVICE_AFFINITY
+  int getNumaNodeOfCudaDevice(const int DeviceID, const hwloc_topology_t &Topology) const {
+    hwloc_bitmap_t cpuset;
+    cpuset = hwloc_bitmap_alloc();
+
+    hwloc_cudart_get_device_cpuset(Topology, DeviceID, cpuset);
+    hwloc_obj_t obj = nullptr;
+    while (!obj) {
+        obj = hwloc_get_next_obj_covering_cpuset_by_type(Topology, cpuset, HWLOC_OBJ_NUMANODE, obj);
+    }
+
+    int os_index = obj->os_index;
+
+    return os_index;
+  }
+#endif // OMPT_USE_NUMA_DEVICE_AFFINITY
+
 public:
   CUstream getStream(const int DeviceId, __tgt_async_info *AsyncInfo) const {
     assert(AsyncInfo && "AsyncInfo is nullptr");
@@ -571,6 +604,16 @@ public:
 
     // We lazily initialize all devices later.
     InitializedFlags.assign(NumberOfDevices, false);
+
+#if OMPT_USE_NUMA_DEVICE_AFFINITY
+    // Init hwloc
+    if (hwloc_get_api_version() != HWLOC_API_VERSION) {
+      HwlocAvailable = false;
+      DP("hwloc library and header missmatch! HEADER VERSION: %x; LIBRARY VERSION: %x\n", HWLOC_API_VERSION, hwloc_get_api_version());
+    } else {
+      HwlocAvailable = true;
+    }
+#endif // OMPT_USE_NUMA_DEVICE_AFFINITY
   }
 
   ~DeviceRTLTy() {
@@ -1267,6 +1310,50 @@ public:
     return (Err == CUDA_SUCCESS) ? OFFLOAD_SUCCESS : OFFLOAD_FAIL;
   }
 
+#if OMPT_USE_NUMA_DEVICE_AFFINITY
+  int initalizeNumaDeviceTable(__tgt_numa_info const *NumaInfoPtr) {
+    if (!NumaInfoPtr->Available || !HwlocAvailable) 
+      return OFFLOAD_FAIL;
+
+    // Compute list of gpu indices by numa distance for each numa node
+    hwloc_topology_t Topology;
+    hwloc_topology_init(&Topology);
+    hwloc_topology_set_io_types_filter(Topology, HWLOC_TYPE_FILTER_KEEP_ALL);
+    hwloc_topology_load(Topology);
+
+    std::vector<std::vector<int32_t>> CudaDevicesOfNumaNode(NumaInfoPtr->ConfiguredNodes);
+    NumaDeviceTable = std::vector<std::vector<int32_t>>(NumaInfoPtr->ConfiguredNodes);
+
+    int CurNumaNode;
+    for (int i = 0; i < NumberOfDevices; i++) {
+      CurNumaNode = getNumaNodeOfCudaDevice(i, Topology);
+      CudaDevicesOfNumaNode[CurNumaNode].push_back(i);
+    }
+
+
+    DP("Calculating CUDA devices by NUMA distance for ech NUMA node\n");
+    for (int i = 0; i < NumaInfoPtr->ConfiguredNodes; i++) {
+      std::string buffer = "Numa Node " + std::to_string(i) + ": ";
+      for (int j = 0; j < NumaInfoPtr->ConfiguredNodes; j++) {
+        CurNumaNode = NumaInfoPtr->NumaDistanceTable[i][j];
+        for (int k : CudaDevicesOfNumaNode[CurNumaNode]) {
+          NumaDeviceTable[i].push_back(k);
+          buffer += "GPU" + std::to_string(k) + ", ";
+        }
+      }
+
+      DP("%s\n", buffer.c_str());
+    }
+
+    return OFFLOAD_SUCCESS;
+  }
+
+  int getNumaDevicesInOrder(int const NumaID, int const **NumaDevicesPtr) const {
+    *NumaDevicesPtr = &NumaDeviceTable[NumaID][0];
+    return OFFLOAD_SUCCESS;
+  }
+#endif // OMPT_USE_NUMA_DEVICE_AFFINITY
+
   int queryAsync(const int DeviceId, __tgt_async_info *AsyncInfo) const {
     CUstream Stream = reinterpret_cast<CUstream>(AsyncInfo->Queue);
     CUresult Err = cuStreamQuery(Stream);
@@ -1915,6 +2002,18 @@ int32_t __tgt_rtl_launch_kernel(int32_t DeviceId, void *TgtEntryPtr,
       KernelArgs->NumTeams[0], KernelArgs->ThreadLimit[0],
       KernelArgs->Tripcount, AsyncInfo);
 }
+
+#if OMPT_USE_NUMA_DEVICE_AFFINITY
+int32_t __tgt_rtl_initialize_numa_device_table(__tgt_numa_info const *numa_info_ptr) {
+  assert(numa_info_ptr && "numa_info_ptr is nullptr");
+  return DeviceRTL.initalizeNumaDeviceTable(numa_info_ptr);
+}
+
+int32_t __tgt_rtl_get_numa_devices_in_order(int32_t numa_node_id, int32_t const **numa_devices) {
+  assert(numa_devices && "numa_devices is nullptr");
+  return DeviceRTL.getNumaDevicesInOrder(numa_node_id, numa_devices);
+}
+#endif // OMPT_USE_NUMA_DEVICE_AFFINITY
 
 #ifdef __cplusplus
 }

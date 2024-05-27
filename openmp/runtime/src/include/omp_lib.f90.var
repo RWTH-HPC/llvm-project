@@ -333,6 +333,12 @@
             integer (kind=omp_integer_kind), value :: device_num
           end subroutine omp_set_default_device
 
+          subroutine omp_get_devices_in_order(n_desired, dev_ids) bind(c)
+            use omp_lib_kinds
+            integer (kind=omp_integer_kind), value :: n_desired
+            integer (kind=omp_integer_kind) dev_ids(*)
+          end subroutine omp_get_devices_in_order
+
           function omp_get_num_devices() bind(c)
             use omp_lib_kinds
             integer (kind=omp_integer_kind) omp_get_num_devices

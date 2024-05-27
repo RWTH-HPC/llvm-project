@@ -19,6 +19,9 @@
 #include "llvm/Support/DynamicLibrary.h"
 
 #include "omptarget.h"
+#if OMPT_USE_NUMA_DEVICE_AFFINITY
+#include "omptargetnuma.h"
+#endif // OMPT_USE_NUMA_DEVICE_AFFINITY
 
 #include <list>
 #include <map>
@@ -54,6 +57,12 @@ struct RTLInfoTy {
                                     const KernelArgsTy *, __tgt_async_info *);
   typedef int64_t(init_requires_ty)(int64_t);
   typedef int32_t(synchronize_ty)(int32_t, __tgt_async_info *);
+
+#if OMPT_USE_NUMA_DEVICE_AFFINITY
+  typedef int32_t(numa_devices_in_order_ty)(int32_t, int32_t const **);
+  typedef int32_t(init_numa_device_table_ty)(__tgt_numa_info const *);
+#endif // OMPT_USE_NUMA_DEVICE_AFFINITY
+
   typedef int32_t(query_async_ty)(int32_t, __tgt_async_info *);
   typedef int32_t (*register_lib_ty)(__tgt_bin_desc *);
   typedef int32_t(supports_empty_images_ty)();
@@ -104,6 +113,12 @@ struct RTLInfoTy {
   launch_kernel_ty *launch_kernel = nullptr;
   init_requires_ty *init_requires = nullptr;
   synchronize_ty *synchronize = nullptr;
+
+#if OMPT_USE_NUMA_DEVICE_AFFINITY
+  numa_devices_in_order_ty *numa_devices_in_order = nullptr;
+  init_numa_device_table_ty *init_numa_device_table = nullptr;
+#endif // OMPT_USE_NUMA_DEVICE_AFFINITY
+
   query_async_ty *query_async = nullptr;
   register_lib_ty register_lib = nullptr;
   register_lib_ty unregister_lib = nullptr;
@@ -194,5 +209,15 @@ struct TableMap {
       : Table(Table), Index(Index) {}
 };
 typedef std::map<void *, TableMap> HostPtrToTableMapTy;
+
+#if OMPT_USE_NUMA_DEVICE_AFFINITY
+struct NumaInfoTy {
+    __tgt_numa_info numa_info;
+    NumaInfoTy();
+};
+
+extern NumaInfoTy *NumaInfo;
+
+#endif // OMPT_USE_NUMA_DEVICE_AFFINITY
 
 #endif

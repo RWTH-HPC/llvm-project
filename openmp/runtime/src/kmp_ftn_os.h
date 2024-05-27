@@ -99,6 +99,10 @@
 #define FTN_SET_DEFAULT_DEVICE omp_set_default_device
 #define FTN_IS_INITIAL_DEVICE omp_is_initial_device
 
+#if OMPT_USE_NUMA_DEVICE_AFFINITY
+#define FTN_GET_DEVICES_IN_ORDER omp_get_devices_in_order
+#endif // OMPT_USE_NUMA_DEVICE_AFFINITY
+
 #define FTN_GET_CANCELLATION omp_get_cancellation
 #define FTN_GET_CANCELLATION_STATUS kmp_get_cancellation_status
 
@@ -233,6 +237,10 @@
 #define FTN_GET_DEFAULT_DEVICE omp_get_default_device_
 #define FTN_SET_DEFAULT_DEVICE omp_set_default_device_
 #define FTN_IS_INITIAL_DEVICE omp_is_initial_device_
+
+#if OMPT_USE_NUMA_DEVICE_AFFINITY
+#define FTN_GET_DEVICES_IN_ORDER omp_get_devices_in_order_
+#endif // OMPT_USE_NUMA_DEVICE_AFFINITY
 
 #define FTN_GET_CANCELLATION omp_get_cancellation_
 #define FTN_GET_CANCELLATION_STATUS kmp_get_cancellation_status_
@@ -421,6 +429,10 @@
 #define FTN_GET_INTEROP_TYPE_DESC OMP_GET_INTEROP_TYPE_DESC
 #define FTN_GET_INTEROP_RC_DESC OMP_GET_INTEROP_RC_DESC
 
+#if OMPT_USE_NUMA_DEVICE_AFFINITY
+#define FTN_GET_DEVICES_IN_ORDER OMP_GET_DEVICES_IN_ORDER
+#endif
+
 #endif /* KMP_FTN_UPPER */
 
 /* ------------------------------------------------------------------------ */
@@ -557,6 +569,10 @@
 #define FTN_GET_INTEROP_NAME OMP_GET_INTEROP_NAME_
 #define FTN_GET_INTEROP_TYPE_DESC OMP_GET_INTEROP_TYPE_DESC_
 #define FTN_GET_INTEROP_RC_DESC OMP_GET_INTEROP_RC_DESC_
+
+#if OMPT_USE_NUMA_DEVICE_AFFINITY
+#define FTN_GET_DEVICES_IN_ORDER OMP_GET_DEVICES_IN_ORDER_
+#endif
 
 #endif /* KMP_FTN_UAPPEND */
 

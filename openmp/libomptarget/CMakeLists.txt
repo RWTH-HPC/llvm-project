@@ -70,6 +70,10 @@ if(LIBOMPTARGET_ENABLE_DEBUG)
   add_definitions(-DOMPTARGET_DEBUG)
 endif()
 
+if (LIBOMP_USE_NUMA_DEVICE_AFFINITY)
+  add_definitions(-DOMPT_USE_NUMA_DEVICE_AFFINITY)
+endif()
+
 # OMPT support for libomptarget
 # Follow host OMPT support and check if host support has been requested.
 # LIBOMP_HAVE_OMPT_SUPPORT indicates whether host OMPT support has been implemented.

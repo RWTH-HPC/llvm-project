@@ -93,6 +93,14 @@ target_include_directories(omptarget.rtl.cuda PRIVATE
   ${LIBOMPTARGET_INCLUDE_DIR}
 )
 
+if (LIBOMP_USE_NUMA_DEVICE_AFFINITY)
+  add_library(hwloc_lib SHARED IMPORTED)
+  set_target_properties(hwloc_lib PROPERTIES
+      IMPORTED_LOCATION "${LIBOMP_HWLOC_INSTALL_DIR}/lib/libhwloc.so"
+      INTERFACE_INCLUDE_DIRECTORIES "${LIBOMP_HWLOC_INSTALL_DIR}/include")
+  target_link_libraries(omptarget.rtl.cuda hwloc_lib ${CUDA_cudart_static_LIBRARY})
+endif()
+
 # Report to the parent scope that we are building a plugin for CUDA.
 # This controls whether tests are run for the nvptx offloading target
 # Run them if libcuda is available, or if the user explicitly asked for dlopen

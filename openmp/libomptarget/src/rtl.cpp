@@ -23,6 +23,7 @@
 #include <cstring>
 #include <mutex>
 #include <string>
+#include <algorithm>
 
 using namespace llvm;
 using namespace llvm::sys;
@@ -43,8 +44,17 @@ PluginManager *PM;
 
 static char *ProfileTraceFile = nullptr;
 
+#if OMPT_USE_NUMA_DEVICE_AFFINITY
+NumaInfoTy *NumaInfo;
+#endif // OMPT_USE_NUMA_DEVICE_AFFINITY
+
 __attribute__((constructor(101))) void init() {
   DP("Init target library!\n");
+#ifdef OMPTARGET_DEBUG
+  if (char *envStr = getenv("LIBOMPTARGET_DEBUG")) {
+    DebugLevel = std::stoi(envStr);
+  }
+#endif // OMPTARGET_DEBUG
 
   bool UseEventsForAtomicTransfers = true;
   if (const char *ForceAtomicMap = getenv("LIBOMPTARGET_MAP_FORCE_ATOMIC")) {
@@ -57,6 +67,10 @@ __attribute__((constructor(101))) void init() {
               "'true'/'TRUE' or 'false'/'FALSE' as options, '%s' ignored\n",
               ForceAtomicMap);
   }
+
+#if OMPT_USE_NUMA_DEVICE_AFFINITY
+  NumaInfo = new NumaInfoTy();
+#endif // OMPT_USE_NUMA_DEVICE_AFFINITY
 
   PM = new PluginManager(UseEventsForAtomicTransfers);
 
@@ -80,6 +94,9 @@ __attribute__((destructor(101))) void deinit() {
 
     timeTraceProfilerCleanup();
   }
+#if OMPT_USE_NUMA_DEVICE_AFFINITY
+  delete NumaInfo;
+#endif // OMPT_USE_NUMA_DEVICE_AFFINITY
 }
 
 void RTLsTy::loadRTLs() {
@@ -246,6 +263,12 @@ bool RTLsTy::attemptLoadRTL(const std::string &RTLName, RTLInfoTy &RTL) {
       DynLibrary->getAddressOfSymbol("__tgt_rtl_data_lock");
   *((void **)&RTL.data_unlock) =
       DynLibrary->getAddressOfSymbol("__tgt_rtl_data_unlock");
+#if OMPT_USE_NUMA_DEVICE_AFFINITY
+    *((void **)&RTL.numa_devices_in_order) =
+      DynLibrary->getAddressOfSymbol("__tgt_rtl_get_numa_devices_in_order");
+    *((void **)&RTL.init_numa_device_table) =
+      DynLibrary->getAddressOfSymbol("__tgt_rtl_initialize_numa_device_table");
+#endif // OMPT_USE_NUMA_DEVICE_AFFINITY
 
   RTL.LibraryHandler = std::move(DynLibrary);
 
@@ -403,6 +426,15 @@ void RTLsTy::initRTLonce(RTLInfoTy &R) {
       // RTL local device ID
       PM->Devices[Start + DeviceId]->RTLDeviceID = DeviceId;
     }
+
+#if OMPT_USE_NUMA_DEVICE_AFFINITY
+    if (R.init_numa_device_table != nullptr) {
+        DP("RTL supports numa device affinity!\n");
+        R.init_numa_device_table(&NumaInfo->numa_info);
+    } else {
+        DP("RTL does not support numa device affinity!\n");
+    }
+#endif
 
     // Initialize the index of this RTL and save it in the used RTLs.
     R.Idx = (UsedRTLs.empty())
@@ -589,3 +621,50 @@ void RTLsTy::unregisterLib(__tgt_bin_desc *Desc) {
 
   DP("Done unregistering library!\n");
 }
+
+#if OMPT_USE_NUMA_DEVICE_AFFINITY
+NumaInfoTy::NumaInfoTy() {
+ if(numa_available() != -1) {
+    numa_info.Available = 1;
+    numa_info.ConfiguredNodes = numa_num_configured_nodes();
+
+    DP("NUMA available with %d configured nodes!\n", numa_info.ConfiguredNodes);
+
+    struct index_distance {
+      int index;
+      int distance;
+    };
+    
+    DP("NUMA Distance Table Sorted:\n");
+
+    numa_info.NumaDistanceTable = (int32_t **)malloc(sizeof(int32_t *) * numa_info.ConfiguredNodes);
+    for (int i = 0; i < numa_info.ConfiguredNodes; i++) {
+      numa_info.NumaDistanceTable[i] = (int32_t *)malloc(sizeof(int32_t) * numa_info.ConfiguredNodes);
+      std::vector<index_distance> distances_with_index(numa_info.ConfiguredNodes);
+
+      std::string buffer = "NUMA node " + std::to_string(i) + ": ";
+      
+      for (int j = 0; j < numa_info.ConfiguredNodes; j++) {
+        distances_with_index[j].index = j;
+        distances_with_index[j].distance = numa_distance(i, j);
+      }
+      
+      std::sort(distances_with_index.begin(), distances_with_index.end(), 
+        [](const struct index_distance &a, const struct index_distance &b) {
+          return a.distance < b.distance;
+        }
+      );
+
+      for (int j = 0; j < numa_info.ConfiguredNodes; j++) {
+        numa_info.NumaDistanceTable[i][j] = distances_with_index[j].index;
+        buffer += std::to_string(distances_with_index[j].index) + ", ";
+      }
+      DP("%s\n", buffer.c_str());
+    }
+
+  } else {
+    numa_info.Available = 0;
+    DP("NUMA not available!\n");
+  } 
+}
+#endif // OMPT_USE_NUMA_DEVICE_AFFINITY

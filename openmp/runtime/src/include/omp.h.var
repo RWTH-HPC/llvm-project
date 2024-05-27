@@ -152,6 +152,8 @@
     extern int   __KAI_KMPC_CONVENTION  omp_get_device_num (void);
     typedef void * omp_depend_t;
 
+    extern int  __KAI_KMPC_CONVENTION   omp_get_devices_in_order (int, int *);
+
     /* OpenMP 5.1 interop */
     typedef intptr_t omp_intptr_t;
 
