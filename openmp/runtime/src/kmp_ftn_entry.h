@@ -1045,7 +1045,7 @@ int FTN_STDCALL KMP_EXPAND_NAME(FTN_GET_DEVICES_IN_ORDER)(int n_desired, int *de
   return 0;
 #else
   int (*fptr)(int, int *);
-  if ((*(void **)(&fptr) = KMP_DLSYM(RTLD_NEXT, "omp_get_devices_in_order"))) {
+  if ((*(void **)(&fptr) = KMP_DLSYM_NEXT("omp_get_devices_in_order"))) {
     return (*fptr)(n_desired, dev_ids);
   } else {
     printf("Failed\n");

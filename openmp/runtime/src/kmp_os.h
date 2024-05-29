@@ -95,7 +95,7 @@
 #endif
 
 #ifndef OMP_USE_NUMA_DEVICE_AFFINITY
-#define OMP_USE_NUMA_DEVICE_AFFINITY 1
+#define OMP_USE_NUMA_DEVICE_AFFINITY 0
 #endif // OMP_USE_NUMA_DEVICE_AFFINITY
 
 /* Check for quad-precision extension. */

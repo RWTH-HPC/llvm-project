@@ -28,6 +28,7 @@
 
 #if OMP_USE_NUMA_DEVICE_AFFINITY
 #include <sched.h>
+#include <numa.h>
 #endif // OMP_USE_NUMA_DEVICE_AFFINITY
 
 void *targetAllocExplicit(size_t Size, int DeviceNum, int Kind,

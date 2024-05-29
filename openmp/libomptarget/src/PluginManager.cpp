@@ -480,7 +480,7 @@ void PluginManager::initAffinityLookupTable(int NumberOfDevices) {
     }
 }
 
-int32_t PluginManager::getNumaDevicesInOrder(int32_t numa_node_id, int32_t n_desired, int32_t const **numa_devices) {
+int32_t PluginManager::getNumaDevicesInOrder(int32_t numa_node_id, int32_t n_desired, int32_t const *numa_devices) {
     int dev_found = 0;
     dev_found = getNumDevices();
     if(n_desired < dev_found) dev_found = n_desired;
