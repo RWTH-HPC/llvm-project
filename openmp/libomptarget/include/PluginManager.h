@@ -34,6 +34,19 @@
 #include <mutex>
 #include <string>
 
+#ifndef OMP_USE_NUMA_DEVICE_AFFINITY
+#define OMP_USE_NUMA_DEVICE_AFFINITY 0
+#endif // OMP_USE_NUMA_DEVICE_AFFINITY
+
+#if OMP_USE_NUMA_DEVICE_AFFINITY
+struct HostToDeviceAffinityLookupTy {
+    int32_t Available = 0;
+    int32_t ConfiguredNodes;
+    int32_t **NumaDistanceTable;
+    std::vector<std::vector<int32_t>> NumaDeviceTable;
+};
+#endif // OMP_USE_NUMA_DEVICE_AFFINITY
+
 struct PluginManager;
 
 /// Plugin adaptors should be created via `PluginAdaptorTy::create` which will
@@ -190,6 +203,12 @@ struct PluginManager {
   /// Add \p Flags to the user provided requirements.
   void addRequirements(int64_t Flags) { Requirements.addRequirements(Flags); }
 
+#if OMP_USE_NUMA_DEVICE_AFFINITY
+  void initAffinityLookupTable();
+
+  int32_t getNumaDevicesInOrder(int32_t numa_node_id, int32_t n_desired, int32_t const **numa_devices);
+#endif
+
 private:
   bool RTLsLoaded = false;
   llvm::SmallVector<__tgt_bin_desc *> DelayedBinDesc;
@@ -208,6 +227,12 @@ private:
 
   /// Devices associated with plugins, accesses to the container are exclusive.
   ProtectedObj<DeviceContainerTy> Devices;
+
+#if OMP_USE_NUMA_DEVICE_AFFINITY
+  HostToDeviceAffinityLookupTy HostDeviceAffinityLookup;
+
+  int getNumaNodeOfCudaDevice(const int DeviceID, const hwloc_topology_t &Topology);
+#endif // OMP_USE_NUMA_DEVICE_AFFINITY
 };
 
 extern PluginManager *PM;

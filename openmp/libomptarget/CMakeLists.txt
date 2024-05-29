@@ -75,6 +75,10 @@ if(LIBOMPTARGET_ENABLE_DEBUG)
   add_definitions(-DOMPTARGET_DEBUG)
 endif()
 
+if (LIBOMP_USE_NUMA_DEVICE_AFFINITY)
+  add_definitions(-DOMP_USE_NUMA_DEVICE_AFFINITY)
+endif()
+
 # No exceptions and no RTTI, except if requested.
 set(offload_compile_flags -fno-exceptions)
 if(NOT LLVM_ENABLE_RTTI)

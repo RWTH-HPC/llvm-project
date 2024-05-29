@@ -437,6 +437,12 @@
           integer (kind=omp_integer_kind) omp_get_num_devices
         end function omp_get_num_devices
 
+        subroutine omp_get_devices_in_order(n_desired, dev_ids) bind(c)
+          import
+          integer (kind=omp_integer_kind), value :: n_desired
+          integer (kind=omp_integer_kind) dev_ids(*)
+        end subroutine omp_get_devices_in_order
+
         function omp_get_num_teams() bind(c)
           import
           integer (kind=omp_integer_kind) omp_get_num_teams

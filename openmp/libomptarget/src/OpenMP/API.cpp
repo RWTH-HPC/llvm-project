@@ -26,6 +26,10 @@
 #include <cstring>
 #include <mutex>
 
+#if OMP_USE_NUMA_DEVICE_AFFINITY
+#include <sched.h>
+#endif // OMP_USE_NUMA_DEVICE_AFFINITY
+
 void *targetAllocExplicit(size_t Size, int DeviceNum, int Kind,
                           const char *Name);
 void targetFreeExplicit(void *DevicePtr, int DeviceNum, int Kind,
@@ -65,6 +69,17 @@ EXTERN int omp_get_num_devices(void) {
 
   return NumDevices;
 }
+
+#if OMP_USE_NUMA_DEVICE_AFFINITY
+EXTERN int omp_get_devices_in_order(int n_desired, int *dev_ids) {
+  // get numa node of current thread's cpu
+  int numa_id = numa_node_of_cpu(sched_getcpu());
+
+  // now access lookup table
+  int devices_found = PM->getNumaDevicesInOrder(numa_id, n_desired, dev_ids);
+  return devices_found;
+}
+#endif // OMP_USE_NUMA_DEVICE_AFFINITY
 
 EXTERN int omp_get_device_num(void) {
   TIMESCOPE();
