@@ -41,6 +41,10 @@ remove_definitions(-DUNICODE -D_UNICODE)
 libomp_get_definitions_flags(LIBOMP_CONFIGURED_DEFINITIONS_FLAGS)
 add_definitions(${LIBOMP_CONFIGURED_DEFINITIONS_FLAGS})
 
+if (LIBOMP_USE_NUMA_DEVICE_AFFINITY)
+  add_definitions(-DOMP_USE_NUMA_DEVICE_AFFINITY)
+endif()
+
 # Set the -I includes for all sources
 include_directories(
   ${CMAKE_CURRENT_BINARY_DIR}

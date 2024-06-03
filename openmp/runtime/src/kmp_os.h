@@ -94,10 +94,6 @@
 #define KMP_HAVE_SCHED_GETCPU 0
 #endif
 
-#ifndef OMP_USE_NUMA_DEVICE_AFFINITY
-#define OMP_USE_NUMA_DEVICE_AFFINITY 0
-#endif // OMP_USE_NUMA_DEVICE_AFFINITY
-
 /* Check for quad-precision extension. */
 #define KMP_HAVE_QUAD 0
 #if KMP_ARCH_X86 || KMP_ARCH_X86_64

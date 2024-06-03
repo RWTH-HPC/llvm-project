@@ -39,6 +39,9 @@ add_llvm_library(omptarget
   LINK_LIBS
   PUBLIC
   omp
+  numa
+  hwloc
+  cudart
 
   NO_INSTALL_RPATH
 )

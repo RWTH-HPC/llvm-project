@@ -18,12 +18,12 @@
 #include "llvm/Support/ErrorHandling.h"
 #include <memory>
 
-#if OMPT_USE_NUMA_DEVICE_AFFINITY
+#if OMP_USE_NUMA_DEVICE_AFFINITY
 #include <hwloc/cudart.h>
 #if HWLOC_API_VERSION < 0x00020000
 #error "hwloc too old, version >= 2.0 required"
 #endif
-#endif // OMPT_USE_NUMA_DEVICE_AFFINITY
+#endif // OMP_USE_NUMA_DEVICE_AFFINITY
 
 using namespace llvm;
 using namespace llvm::sys;
@@ -277,6 +277,10 @@ void PluginManager::registerLib(__tgt_bin_desc *Desc) {
       DP("No RTL found for image " DPxMOD "!\n", DPxPTR(Img->ImageStart));
     }
   }
+
+#if OMP_USE_NUMA_DEVICE_AFFINITY
+  PM->initAffinityLookupTable(PM->getNumDevices());
+#endif // OMP_USE_NUMA_DEVICE_AFFINITY
   PM->RTLsMtx.unlock();
 
   DP("Done registering entries!\n");
@@ -389,7 +393,7 @@ Expected<DeviceTy &> PluginManager::getDevice(uint32_t DeviceNo) {
 }
 
 #if OMP_USE_NUMA_DEVICE_AFFINITY
-int PluginManager::getNumaNodeOfCudaDevice(const int DeviceID, const hwloc_topology_t &Topology) const {
+int PluginManager::getNumaNodeOfCudaDevice(const int DeviceID, const hwloc_topology_t &Topology) {
   hwloc_bitmap_t cpuset = hwloc_bitmap_alloc();
   hwloc_cudart_get_device_cpuset(Topology, DeviceID, cpuset);
   hwloc_obj_t obj = nullptr;
@@ -418,6 +422,7 @@ void PluginManager::initAffinityLookupTable(int NumberOfDevices) {
     HostDeviceAffinityLookup.ConfiguredNodes = numa_num_configured_nodes();
 
     DP("NUMA available with %d configured nodes!\n", HostDeviceAffinityLookup.ConfiguredNodes);
+    DP("Number of available devices: %d\n", NumberOfDevices);
 
     struct index_distance {
         int index;
@@ -458,7 +463,7 @@ void PluginManager::initAffinityLookupTable(int NumberOfDevices) {
     hwloc_topology_load(Topology);
 
     std::vector<std::vector<int32_t>> CudaDevicesOfNumaNode(HostDeviceAffinityLookup.ConfiguredNodes);
-    NumaDeviceTable = std::vector<std::vector<int32_t>>(HostDeviceAffinityLookup.ConfiguredNodes);
+    HostDeviceAffinityLookup.NumaDeviceTable = std::vector<std::vector<int32_t>>(HostDeviceAffinityLookup.ConfiguredNodes);
 
     int CurNumaNode;
     for (int i = 0; i < NumberOfDevices; i++) {
@@ -466,13 +471,13 @@ void PluginManager::initAffinityLookupTable(int NumberOfDevices) {
         CudaDevicesOfNumaNode[CurNumaNode].push_back(i);
     }
 
-    DP("Calculating CUDA devices by NUMA distance for ech NUMA node\n");
+    DP("Calculating CUDA devices by NUMA distance for each NUMA node\n");
     for (int i = 0; i < HostDeviceAffinityLookup.ConfiguredNodes; i++) {
         std::string buffer = "Numa Node " + std::to_string(i) + ": ";
         for (int j = 0; j < HostDeviceAffinityLookup.ConfiguredNodes; j++) {
             CurNumaNode = HostDeviceAffinityLookup.NumaDistanceTable[i][j];
             for (int k : CudaDevicesOfNumaNode[CurNumaNode]) {
-                NumaDeviceTable[i].push_back(k);
+                HostDeviceAffinityLookup.NumaDeviceTable[i].push_back(k);
                 buffer += "GPU" + std::to_string(k) + ", ";
             }
         }
@@ -480,7 +485,7 @@ void PluginManager::initAffinityLookupTable(int NumberOfDevices) {
     }
 }
 
-int32_t PluginManager::getNumaDevicesInOrder(int32_t numa_node_id, int32_t n_desired, int32_t const *numa_devices) {
+int32_t PluginManager::getNumaDevicesInOrder(int32_t numa_node_id, int32_t n_desired, int32_t *numa_devices) {
     int dev_found = 0;
     dev_found = getNumDevices();
     if(n_desired < dev_found) dev_found = n_desired;
@@ -491,7 +496,7 @@ int32_t PluginManager::getNumaDevicesInOrder(int32_t numa_node_id, int32_t n_des
         }
     } else {
         for(int i = 0; i < dev_found; i++) {
-            numa_devices[i] = NumaDeviceTable[numa_node_id][i];
+            numa_devices[i] = HostDeviceAffinityLookup.NumaDeviceTable[numa_node_id][i];
         }
     }
 }

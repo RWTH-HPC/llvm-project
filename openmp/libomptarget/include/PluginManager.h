@@ -39,6 +39,7 @@
 #endif // OMP_USE_NUMA_DEVICE_AFFINITY
 
 #include "hwloc.h"
+#include <numa.h>
 
 #if OMP_USE_NUMA_DEVICE_AFFINITY
 struct HostToDeviceAffinityLookupTy {
@@ -206,9 +207,9 @@ struct PluginManager {
   void addRequirements(int64_t Flags) { Requirements.addRequirements(Flags); }
 
 #if OMP_USE_NUMA_DEVICE_AFFINITY
-  void initAffinityLookupTable();
+  void initAffinityLookupTable(int NumberOfDevices);
 
-  int32_t getNumaDevicesInOrder(int32_t numa_node_id, int32_t n_desired, int32_t const *numa_devices);
+  int32_t getNumaDevicesInOrder(int32_t numa_node_id, int32_t n_desired, int32_t *numa_devices);
 #endif
 
 private:

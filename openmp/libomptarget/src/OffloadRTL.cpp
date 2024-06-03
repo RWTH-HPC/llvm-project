@@ -36,10 +36,6 @@ __attribute__((constructor(101))) void init() {
   PM->init();
 
   PM->registerDelayedLibraries();
-
-#if OMP_USE_NUMA_DEVICE_AFFINITY
-  PM->initAffinityLookupTable();
-#endif // OMP_USE_NUMA_DEVICE_AFFINITY
 }
 
 __attribute__((destructor(101))) void deinit() {
