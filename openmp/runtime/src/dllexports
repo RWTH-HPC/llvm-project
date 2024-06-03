@@ -499,6 +499,7 @@ kmp_set_warnings_off                        780
     omp_set_default_device                  879
     omp_get_default_device                  880
     omp_get_num_devices                     881
+    omp_get_devices_in_order                899
 
     omp_init_lock_with_hint                 870
     omp_init_nest_lock_with_hint            871

@@ -1040,7 +1040,9 @@ void FTN_STDCALL KMP_EXPAND_NAME(FTN_SET_DEFAULT_DEVICE)(int KMP_DEREF arg) {
 
 #if OMP_USE_NUMA_DEVICE_AFFINITY
 #include <stdio.h>
-int FTN_STDCALL KMP_EXPAND_NAME(FTN_GET_DEVICES_IN_ORDER)(int n_desired, int *dev_ids) {
+int FTN_STDCALL FTN_GET_DEVICES_IN_ORDER(int n_desired, int *dev_ids)
+    KMP_WEAK_ATTRIBUTE_EXTERNAL;
+int FTN_STDCALL FTN_GET_DEVICES_IN_ORDER(int n_desired, int *dev_ids) {
 #if KMP_MIC || KMP_OS_DARWIN || defined(KMP_STUB)
   return 0;
 #else
