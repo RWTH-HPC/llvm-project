@@ -499,5 +499,6 @@ int32_t PluginManager::getNumaDevicesInOrder(int32_t numa_node_id, int32_t n_des
             numa_devices[i] = HostDeviceAffinityLookup.NumaDeviceTable[numa_node_id][i];
         }
     }
+    return dev_found;
 }
 #endif // OMP_USE_NUMA_DEVICE_AFFINITY
