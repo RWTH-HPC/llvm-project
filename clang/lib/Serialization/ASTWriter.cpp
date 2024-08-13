@@ -7819,6 +7819,11 @@ void OMPClauseWriter::VisitOMPMessageClause(OMPMessageClause *C) {
   Record.AddSourceLocation(C->getLParenLoc());
 }
 
+void OMPClauseWriter::VisitOMPXNameClause(OMPXNameClause *C) {
+  Record.AddStmt(C->getNameLiteral());
+  Record.AddSourceLocation(C->getLParenLoc());
+}
+
 void OMPClauseWriter::VisitOMPNontemporalClause(OMPNontemporalClause *C) {
   Record.push_back(C->varlist_size());
   Record.AddSourceLocation(C->getLParenLoc());

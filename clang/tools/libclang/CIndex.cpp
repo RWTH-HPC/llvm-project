@@ -2511,6 +2511,8 @@ void OMPClauseEnqueue::VisitOMPSeverityClause(const OMPSeverityClause *) {}
 
 void OMPClauseEnqueue::VisitOMPMessageClause(const OMPMessageClause *) {}
 
+void OMPClauseEnqueue::VisitOMPXNameClause(const OMPXNameClause *) {}
+
 void OMPClauseEnqueue::VisitOMPDeviceClause(const OMPDeviceClause *C) {
   Visitor->AddStmt(C->getDevice());
 }

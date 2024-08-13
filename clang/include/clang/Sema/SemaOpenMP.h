@@ -1120,6 +1120,12 @@ public:
                                       SourceLocation LParenLoc,
                                       SourceLocation EndLoc);
 
+  /// Called on well-formed 'name' clause.
+  /// passing string for name.
+  OMPClause *ActOnOpenMPXNameClause(Expr *MS, SourceLocation StartLoc,
+                                    SourceLocation LParenLoc,
+                                    SourceLocation EndLoc);
+
   /// Data used for processing a list of variables in OpenMP clauses.
   struct OpenMPVarListDataTy final {
     Expr *DepModOrTailExpr = nullptr;

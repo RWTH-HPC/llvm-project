@@ -4713,6 +4713,7 @@ void CodeGenFunction::EmitOMPTaskBasedDirective(
     const OMPExecutableDirective &S, const OpenMPDirectiveKind CapturedRegion,
     const RegionCodeGenTy &BodyGen, const TaskGenTy &TaskGen,
     OMPTaskDataTy &Data) {
+
   // Emit outlined function for task construct.
   const CapturedStmt *CS = S.getCapturedStmt(CapturedRegion);
   auto I = CS->getCapturedDecl()->param_begin();
@@ -5090,6 +5091,12 @@ void CodeGenFunction::EmitOMPTaskBasedDirective(
   OpenMPDirectiveKind EKind = getEffectiveDirectiveKind(S);
   llvm::Function *OutlinedFn = CGM.getOpenMPRuntime().emitTaskOutlinedFunction(
       S, *I, *PartId, *TaskT, EKind, CodeGen, Data.Tied, Data.NumberOfParts);
+  const OMPXNameClause *NC = S.getSingleClause<OMPXNameClause>();
+  Expr *ME = NC ? NC->getNameLiteral() : nullptr;
+  if (NC) {
+    printf("Has Name Clause\n");
+    ME->printPretty(std::cout, nullptr, Policy, 0);
+  }
   OMPLexicalScope Scope(*this, S, std::nullopt,
                         !isOpenMPParallelDirective(EKind) &&
                             !isOpenMPSimdDirective(EKind));

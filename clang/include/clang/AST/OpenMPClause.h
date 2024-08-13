@@ -1687,6 +1687,75 @@ public:
   }
 };
 
+/// This represents 'name' clause in the '#pragma omp ...'
+/// directive.
+///
+/// \code
+/// #pragma omp task name(any_name)
+/// \endcode
+/// In this example directive '#pragma omp task' has clause 'name' with
+/// single expression 'any_name'.
+class OMPXNameClause : public OMPClause {
+  friend class OMPClauseReader;
+
+  /// Location of '('.
+  SourceLocation LParenLoc;
+
+  /// Name.
+  Stmt *NameLiteral = nullptr;
+
+  /// Set the Name.
+  ///
+  /// \param E Name.
+  void setNameLiteral(Expr *E) { NameLiteral = E; }
+
+public:
+  /// Build 'name' clause.
+  ///
+  /// \param NameLiteral Expression associated with this clause.
+  /// \param StartLoc Starting location of the clause.
+  /// \param LParenLoc Location of '('.
+  /// \param EndLoc Ending location of the clause.
+  OMPXNameClause(Expr *Name, SourceLocation StartLoc, SourceLocation LParenLoc,
+                 SourceLocation EndLoc)
+      : OMPClause(llvm::omp::OMPC_name, StartLoc, EndLoc), LParenLoc(LParenLoc),
+        NameLiteral(Name) {}
+
+  /// Build an empty clause.
+  OMPXNameClause()
+      : OMPClause(llvm::omp::OMPC_name, SourceLocation(), SourceLocation()) {}
+
+  /// Sets the location of '('.
+  void setLParenLoc(SourceLocation Loc) { LParenLoc = Loc; }
+
+  /// Returns the location of '('.
+  SourceLocation getLParenLoc() const { return LParenLoc; }
+
+  /// Return Name.
+  Expr *getNameLiteral() { return cast_or_null<Expr>(NameLiteral); }
+
+  /// Return Name.
+  Expr *getNameLiteral() const { return cast_or_null<Expr>(NameLiteral); }
+
+  child_range children() { return child_range(&NameLiteral, &NameLiteral + 1); }
+
+  const_child_range children() const {
+    return const_child_range(&NameLiteral, &NameLiteral + 1);
+  }
+
+  child_range used_children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+
+  const_child_range used_children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
+  static bool classof(const OMPClause *T) {
+    return T->getClauseKind() == llvm::omp::OMPC_name;
+  }
+};
+
 /// This represents 'schedule' clause in the '#pragma omp ...' directive.
 ///
 /// \code

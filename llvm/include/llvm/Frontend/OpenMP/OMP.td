@@ -353,6 +353,9 @@ def OMPC_Priority : Clause<"priority"> {
   let clangClass = "OMPPriorityClause";
   let flangClass = "ScalarIntExpr";
 }
+def OMPC_Name : Clause<"name"> {
+  let clangClass = "OMPXNameClause";
+}
 def OMPC_Private : Clause<"private"> {
   let clangClass = "OMPPrivateClause";
   let flangClass = "OmpObjectList";
@@ -1059,6 +1062,7 @@ def OMP_Task : Directive<"task"> {
     VersionedClause<OMPC_Final>,
     VersionedClause<OMPC_If>,
     VersionedClause<OMPC_Priority>,
+    VersionedClause<OMPC_Name>,
   ];
   let association = AS_Block;
   let category = CA_Executable;
@@ -1090,6 +1094,7 @@ def OMP_TaskLoop : Directive<"taskloop"> {
     VersionedClause<OMPC_Final>,
     VersionedClause<OMPC_If>,
     VersionedClause<OMPC_Priority>,
+    VersionedClause<OMPC_Name>,
   ];
   let allowedExclusiveClauses = [
     VersionedClause<OMPC_GrainSize>,
@@ -1400,6 +1405,7 @@ def OMP_MaskedTaskloop : Directive<"masked taskloop"> {
     VersionedClause<OMPC_NoGroup>,
     VersionedClause<OMPC_NumTasks>,
     VersionedClause<OMPC_Priority>,
+    VersionedClause<OMPC_Name>,
     VersionedClause<OMPC_Private>,
     VersionedClause<OMPC_Reduction>,
     VersionedClause<OMPC_Shared>,
@@ -1428,6 +1434,7 @@ def OMP_MaskedTaskloopSimd : Directive<"masked taskloop simd"> {
     VersionedClause<OMPC_NumTasks>,
     VersionedClause<OMPC_Order, 50>,
     VersionedClause<OMPC_Priority>,
+    VersionedClause<OMPC_Name>,
     VersionedClause<OMPC_Private>,
     VersionedClause<OMPC_Reduction>,
     VersionedClause<OMPC_SafeLen>,
@@ -1453,6 +1460,7 @@ def OMP_MasterTaskloop : Directive<"master taskloop"> {
     VersionedClause<OMPC_NoGroup>,
     VersionedClause<OMPC_NumTasks>,
     VersionedClause<OMPC_Priority>,
+    VersionedClause<OMPC_Name>,
     VersionedClause<OMPC_Private>,
     VersionedClause<OMPC_Reduction>,
     VersionedClause<OMPC_Shared>,
@@ -1480,6 +1488,7 @@ def OMP_MasterTaskloopSimd : Directive<"master taskloop simd"> {
     VersionedClause<OMPC_NumTasks>,
     VersionedClause<OMPC_Order, 50>,
     VersionedClause<OMPC_Priority>,
+    VersionedClause<OMPC_Name>,
     VersionedClause<OMPC_Private>,
     VersionedClause<OMPC_Reduction>,
     VersionedClause<OMPC_SafeLen>,
@@ -1651,6 +1660,7 @@ def OMP_ParallelMaskedTaskloop :
     VersionedClause<OMPC_NumThreads>,
     VersionedClause<OMPC_OMPX_Attribute>,
     VersionedClause<OMPC_Priority>,
+    VersionedClause<OMPC_Name>,
     VersionedClause<OMPC_Private>,
     VersionedClause<OMPC_ProcBind>,
     VersionedClause<OMPC_Reduction>,
@@ -1683,6 +1693,7 @@ def OMP_ParallelMaskedTaskloopSimd :
     VersionedClause<OMPC_OMPX_Attribute>,
     VersionedClause<OMPC_Order, 50>,
     VersionedClause<OMPC_Priority>,
+    VersionedClause<OMPC_Name>,
     VersionedClause<OMPC_Private>,
     VersionedClause<OMPC_ProcBind>,
     VersionedClause<OMPC_Reduction>,
@@ -1729,6 +1740,7 @@ def OMP_ParallelMasterTaskloop :
     VersionedClause<OMPC_NumThreads>,
     VersionedClause<OMPC_OMPX_Attribute>,
     VersionedClause<OMPC_Priority>,
+    VersionedClause<OMPC_Name>,
     VersionedClause<OMPC_Private>,
     VersionedClause<OMPC_ProcBind>,
     VersionedClause<OMPC_Reduction>,
@@ -1760,6 +1772,7 @@ def OMP_ParallelMasterTaskloopSimd :
     VersionedClause<OMPC_OMPX_Attribute>,
     VersionedClause<OMPC_Order, 50>,
     VersionedClause<OMPC_Priority>,
+    VersionedClause<OMPC_Name>,
     VersionedClause<OMPC_Private>,
     VersionedClause<OMPC_ProcBind>,
     VersionedClause<OMPC_Reduction>,
@@ -2343,6 +2356,7 @@ def OMP_TaskLoopSimd : Directive<"taskloop simd"> {
     VersionedClause<OMPC_Final>,
     VersionedClause<OMPC_Order, 50>,
     VersionedClause<OMPC_Priority>,
+    VersionedClause<OMPC_Name>,
     VersionedClause<OMPC_SafeLen>,
     VersionedClause<OMPC_SimdLen>,
   ];

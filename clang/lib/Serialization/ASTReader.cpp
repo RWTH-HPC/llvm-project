@@ -10650,6 +10650,9 @@ OMPClause *OMPClauseReader::readClause() {
   case llvm::omp::OMPC_priority:
     C = new (Context) OMPPriorityClause();
     break;
+  case llvm::omp::OMPC_name:
+    C = new (Context) OMPXNameClause();
+    break;
   case llvm::omp::OMPC_grainsize:
     C = new (Context) OMPGrainsizeClause();
     break;
@@ -11058,6 +11061,11 @@ void OMPClauseReader::VisitOMPSeverityClause(OMPSeverityClause *C) {
 
 void OMPClauseReader::VisitOMPMessageClause(OMPMessageClause *C) {
   C->setMessageString(Record.readSubExpr());
+  C->setLParenLoc(Record.readSourceLocation());
+}
+
+void OMPClauseReader::VisitOMPXNameClause(OMPXNameClause *C) {
+  C->setNameLiteral(Record.readSubExpr());
   C->setLParenLoc(Record.readSourceLocation());
 }
 

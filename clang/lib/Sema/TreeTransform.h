@@ -2488,6 +2488,17 @@ public:
                                                        EndLoc);
   }
 
+  /// Build a new OpenMP 'name' clause.
+  ///
+  /// By default, performs semantic analysis to build the new OpenMP clause.
+  /// Subclasses may override this routine to provide different behavior.
+  OMPClause *RebuildOMPXNameClause(Expr *MS, SourceLocation StartLoc,
+                                   SourceLocation LParenLoc,
+                                   SourceLocation EndLoc) {
+    return getSema().OpenMP().ActOnOpenMPXNameClause(MS, StartLoc, LParenLoc,
+                                                     EndLoc);
+  }
+
   /// Build a new OpenMP 'doacross' clause.
   ///
   /// By default, performs semantic analysis to build the new OpenMP clause.
@@ -10586,6 +10597,15 @@ TreeTransform<Derived>::TransformOMPMessageClause(OMPMessageClause *C) {
   return getDerived().RebuildOMPMessageClause(
       C->getMessageString(), C->getBeginLoc(), C->getLParenLoc(),
       C->getEndLoc());
+}
+
+template <typename Derived>
+OMPClause *TreeTransform<Derived>::TransformOMPXNameClause(OMPXNameClause *C) {
+  ExprResult E = getDerived().TransformExpr(C->getNameLiteral());
+  if (E.isInvalid())
+    return nullptr;
+  return getDerived().RebuildOMPXNameClause(
+      C->getNameLiteral(), C->getBeginLoc(), C->getLParenLoc(), C->getEndLoc());
 }
 
 template <typename Derived>

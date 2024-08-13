@@ -3414,6 +3414,12 @@ bool RecursiveASTVisitor<Derived>::VisitOMPMessageClause(OMPMessageClause *C) {
 }
 
 template <typename Derived>
+bool RecursiveASTVisitor<Derived>::VisitOMPXNameClause(OMPXNameClause *C) {
+  TRY_TO(TraverseStmt(C->getNameLiteral()));
+  return true;
+}
+
+template <typename Derived>
 bool
 RecursiveASTVisitor<Derived>::VisitOMPScheduleClause(OMPScheduleClause *C) {
   TRY_TO(VisitOMPClauseWithPreInit(C));

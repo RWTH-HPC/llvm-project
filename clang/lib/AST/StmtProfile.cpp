@@ -555,6 +555,11 @@ void OMPClauseProfiler::VisitOMPMessageClause(const OMPMessageClause *C) {
     Profiler->VisitStmt(C->getMessageString());
 }
 
+void OMPClauseProfiler::VisitOMPXNameClause(const OMPXNameClause *C) {
+  if (C->getNameLiteral())
+    Profiler->VisitStmt(C->getNameLiteral());
+}
+
 void OMPClauseProfiler::VisitOMPScheduleClause(const OMPScheduleClause *C) {
   VistOMPClauseWithPreInit(C);
   if (auto *S = C->getChunkSize())
