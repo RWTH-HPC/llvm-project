@@ -2781,6 +2781,7 @@ enum KmpTaskTFields {
   Data2,
   /// (Taskloops only) Lower bound.
   KmpTaskTLowerBound,
+  Data3 = KmpTaskTLowerBound,
   /// (Taskloops only) Upper bound.
   KmpTaskTUpperBound,
   /// (Taskloops only) Stride.
@@ -2789,6 +2790,8 @@ enum KmpTaskTFields {
   KmpTaskTLastIter,
   /// (Taskloops only) Reduction data.
   KmpTaskTReductions,
+  /// (Taskloops only) data3
+  TaskloopData3,
 };
 } // anonymous namespace
 
@@ -2938,6 +2941,7 @@ createKmpTaskTRecordDecl(CodeGenModule &CGM, OpenMPDirectiveKind Kind,
   UD->startDefinition();
   addFieldToRecordDecl(C, UD, KmpInt32Ty);
   addFieldToRecordDecl(C, UD, KmpRoutineEntryPointerQTy);
+  addFieldToRecordDecl(C, UD, C.getPointerType(C.CharTy));
   UD->completeDefinition();
   QualType KmpCmplrdataTy = C.getRecordType(UD);
   RecordDecl *RD = C.buildImplicitRecord("kmp_task_t");
@@ -2957,6 +2961,8 @@ createKmpTaskTRecordDecl(CodeGenModule &CGM, OpenMPDirectiveKind Kind,
     addFieldToRecordDecl(C, RD, KmpInt64Ty);
     addFieldToRecordDecl(C, RD, KmpInt32Ty);
     addFieldToRecordDecl(C, RD, C.VoidPtrTy);
+  } else {
+    addFieldToRecordDecl(C, RD, KmpCmplrdataTy); // name of plain task
   }
   RD->completeDefinition();
   return RD;
@@ -3726,6 +3732,7 @@ CGOpenMPRuntime::emitTaskInit(CodeGenFunction &CGF, SourceLocation Loc,
     DestructorsFlag = 0x8,
     PriorityFlag = 0x20,
     DetachableFlag = 0x40,
+    NamedFlag = 0x100,
   };
   unsigned Flags = Data.Tied ? TiedFlag : 0;
   bool NeedsCleanup = false;
@@ -3737,6 +3744,8 @@ CGOpenMPRuntime::emitTaskInit(CodeGenFunction &CGF, SourceLocation Loc,
   }
   if (Data.Priority.getInt())
     Flags = Flags | PriorityFlag;
+  if (Data.HasNameClause)
+    Flags = Flags | NamedFlag;
   if (D.hasClausesOfKind<OMPDetachClause>())
     Flags = Flags | DetachableFlag;
   llvm::Value *TaskFlags =
@@ -3967,7 +3976,7 @@ CGOpenMPRuntime::emitTaskInit(CodeGenFunction &CGF, SourceLocation Loc,
     }
   }
   // Fields of union "kmp_cmplrdata_t" for destructors and priority.
-  enum { Priority = 0, Destructors = 1 };
+  enum { Priority = 0, Destructors = 1, NameLiteral = 2 };
   // Provide pointer to function with destructors for privates.
   auto FI = std::next(KmpTaskTQTyRD->field_begin(), Data1);
   const RecordDecl *KmpCmplrdataUD =
@@ -3990,6 +3999,19 @@ CGOpenMPRuntime::emitTaskInit(CodeGenFunction &CGF, SourceLocation Loc,
     LValue PriorityLV = CGF.EmitLValueForField(
         Data2LV, *std::next(KmpCmplrdataUD->field_begin(), Priority));
     CGF.EmitStoreOfScalar(Data.Priority.getPointer(), PriorityLV);
+  }
+  if (Data.HasNameClause) {
+    LValue Data3LV = CGF.EmitLValueForField(
+        TDBase, *std::next(KmpTaskTQTyRD->field_begin(),
+                           isOpenMPTaskLoopDirective(D.getDirectiveKind())
+                               ? TaskloopData3
+                               : Data3));
+    LValue NameLV = CGF.EmitLValueForField(
+        Data3LV, *std::next(KmpCmplrdataUD->field_begin(), NameLiteral));
+    Expr *ME = D.getSingleClause<OMPXNameClause>()->getNameLiteral();
+    CGF.EmitStoreOfScalar(
+        CGF.EmitStringLiteralLValue(cast<StringLiteral>(ME)).getPointer(CGF),
+        NameLV);
   }
   Result.NewTask = NewTask;
   Result.TaskEntry = TaskEntry;

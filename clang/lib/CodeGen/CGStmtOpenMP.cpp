@@ -5091,12 +5091,7 @@ void CodeGenFunction::EmitOMPTaskBasedDirective(
   OpenMPDirectiveKind EKind = getEffectiveDirectiveKind(S);
   llvm::Function *OutlinedFn = CGM.getOpenMPRuntime().emitTaskOutlinedFunction(
       S, *I, *PartId, *TaskT, EKind, CodeGen, Data.Tied, Data.NumberOfParts);
-  const OMPXNameClause *NC = S.getSingleClause<OMPXNameClause>();
-  Expr *ME = NC ? NC->getNameLiteral() : nullptr;
-  if (NC) {
-    printf("Has Name Clause\n");
-    ME->printPretty(std::cout, nullptr, Policy, 0);
-  }
+  Data.HasNameClause = S.hasClausesOfKind<OMPXNameClause>();
   OMPLexicalScope Scope(*this, S, std::nullopt,
                         !isOpenMPParallelDirective(EKind) &&
                             !isOpenMPSimdDirective(EKind));
@@ -5270,6 +5265,7 @@ void CodeGenFunction::EmitOMPTargetTaskBasedDirective(
     }
     BodyGen(CGF);
   };
+  Data.HasNameClause = S.hasClausesOfKind<OMPXNameClause>();
   llvm::Function *OutlinedFn = CGM.getOpenMPRuntime().emitTaskOutlinedFunction(
       S, *I, *PartId, *TaskT, EKind, CodeGen, /*Tied=*/true,
       Data.NumberOfParts);

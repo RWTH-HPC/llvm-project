@@ -2463,6 +2463,7 @@ typedef union kmp_cmplrdata {
   kmp_routine_entry_t
       destructors; /* pointer to function to invoke deconstructors of
                       firstprivate C++ objects */
+  const char *name;
   /* future data */
 } kmp_cmplrdata_t;
 
@@ -2477,6 +2478,7 @@ typedef struct kmp_task { /* GEH: Shouldn't this be aligned somehow? */
   kmp_cmplrdata_t
       data1; /* Two known optional additions: destructors and priority */
   kmp_cmplrdata_t data2; /* Process destructors first, priority second */
+  kmp_cmplrdata_t data3; /* Process destructors first, priority second */
   /* future data */
   /*  private vars  */
 } kmp_task_t;
@@ -2699,7 +2701,8 @@ typedef struct kmp_tasking_flags { /* Total struct must be exactly 32 bits */
   unsigned tasking_ser : 1;
   unsigned task_serial : 1;
   unsigned tasktype : 1;
-  unsigned reserved : 8;
+  unsigned reserved : 7;
+  unsigned named : 1;
   unsigned hidden_helper : 1;
   unsigned detachable : 1;
   unsigned priority_specified : 1;
@@ -2722,7 +2725,8 @@ typedef struct kmp_tasking_flags { /* Total struct must be exactly 32 bits */
                                       setting for the task */
   unsigned detachable : 1; /* 1 == can detach */
   unsigned hidden_helper : 1; /* 1 == hidden helper task */
-  unsigned reserved : 8; /* reserved for compiler use */
+  unsigned named : 1;
+  unsigned reserved : 7; /* reserved for compiler use */
 
   /* Library flags */ /* Total library flags must be 16 bits */
   unsigned tasktype : 1; /* task is either explicit(1) or implicit (0) */

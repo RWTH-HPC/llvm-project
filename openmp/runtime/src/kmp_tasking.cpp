@@ -2129,6 +2129,11 @@ kmp_int32 __kmpc_omp_task(ident_t *loc_ref, kmp_int32 gtid,
   __kmp_assert_valid_gtid(gtid);
 
 #if OMPT_SUPPORT
+  printf("Task flags 0x%x\n", new_taskdata->td_flags);
+  if (new_taskdata->td_flags.named)
+    printf("Named Task: %p \"%s\"\n", new_task->data3.name,
+           new_task->data3.name);
+
   kmp_taskdata_t *parent = NULL;
   if (UNLIKELY(ompt_enabled.enabled)) {
     if (!new_taskdata->td_flags.started) {
