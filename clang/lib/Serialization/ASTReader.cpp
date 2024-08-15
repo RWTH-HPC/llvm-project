@@ -10650,7 +10650,7 @@ OMPClause *OMPClauseReader::readClause() {
   case llvm::omp::OMPC_priority:
     C = new (Context) OMPPriorityClause();
     break;
-  case llvm::omp::OMPC_name:
+  case llvm::omp::OMPC_ompx_name:
     C = new (Context) OMPXNameClause();
     break;
   case llvm::omp::OMPC_grainsize:

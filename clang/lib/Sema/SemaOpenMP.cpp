@@ -6552,7 +6552,7 @@ StmtResult SemaOpenMP::ActOnOpenMPExecutableDirective(
       case OMPC_num_tasks:
       case OMPC_final:
       case OMPC_priority:
-      case OMPC_name:
+      case OMPC_ompx_name:
       case OMPC_novariants:
       case OMPC_nocontext:
         // Do not analyze if no parent parallel directive.
@@ -15018,7 +15018,7 @@ OMPClause *SemaOpenMP::ActOnOpenMPSingleExprClause(OpenMPClauseKind Kind,
   case OMPC_priority:
     Res = ActOnOpenMPPriorityClause(Expr, StartLoc, LParenLoc, EndLoc);
     break;
-  case OMPC_name:
+  case OMPC_ompx_name:
     Res = ActOnOpenMPXNameClause(Expr, StartLoc, LParenLoc, EndLoc);
     break;
   case OMPC_hint:
@@ -15711,7 +15711,7 @@ OMPClause *SemaOpenMP::ActOnOpenMPSimpleClause(
   case OMPC_num_teams:
   case OMPC_thread_limit:
   case OMPC_priority:
-  case OMPC_name:
+  case OMPC_ompx_name:
   case OMPC_grainsize:
   case OMPC_nogroup:
   case OMPC_num_tasks:
@@ -15898,7 +15898,7 @@ OMPClause *SemaOpenMP::ActOnOpenMPXNameClause(Expr *ME, SourceLocation StartLoc,
   assert(ME && "NULL expr in Name clause");
   if (!isa<StringLiteral>(ME)) {
     Diag(ME->getBeginLoc(), diag::warn_clause_expected_string)
-        << getOpenMPClauseName(OMPC_name);
+        << getOpenMPClauseName(OMPC_ompx_name);
     return nullptr;
   }
   return new (getASTContext()) OMPXNameClause(ME, StartLoc, LParenLoc, EndLoc);
@@ -16161,7 +16161,7 @@ OMPClause *SemaOpenMP::ActOnOpenMPSingleExprWithArgClause(
   case OMPC_num_teams:
   case OMPC_thread_limit:
   case OMPC_priority:
-  case OMPC_name:
+  case OMPC_ompx_name:
   case OMPC_nogroup:
   case OMPC_hint:
   case OMPC_unknown:
@@ -16430,7 +16430,7 @@ OMPClause *SemaOpenMP::ActOnOpenMPClause(OpenMPClauseKind Kind,
   case OMPC_num_teams:
   case OMPC_thread_limit:
   case OMPC_priority:
-  case OMPC_name:
+  case OMPC_ompx_name:
   case OMPC_grainsize:
   case OMPC_num_tasks:
   case OMPC_hint:
@@ -17038,7 +17038,7 @@ OMPClause *SemaOpenMP::ActOnOpenMPVarListClause(OpenMPClauseKind Kind,
   case OMPC_threads:
   case OMPC_simd:
   case OMPC_priority:
-  case OMPC_name:
+  case OMPC_ompx_name:
   case OMPC_grainsize:
   case OMPC_nogroup:
   case OMPC_num_tasks:

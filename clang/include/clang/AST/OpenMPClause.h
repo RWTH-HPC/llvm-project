@@ -1718,12 +1718,13 @@ public:
   /// \param EndLoc Ending location of the clause.
   OMPXNameClause(Expr *Name, SourceLocation StartLoc, SourceLocation LParenLoc,
                  SourceLocation EndLoc)
-      : OMPClause(llvm::omp::OMPC_name, StartLoc, EndLoc), LParenLoc(LParenLoc),
-        NameLiteral(Name) {}
+      : OMPClause(llvm::omp::OMPC_ompx_name, StartLoc, EndLoc),
+        LParenLoc(LParenLoc), NameLiteral(Name) {}
 
   /// Build an empty clause.
   OMPXNameClause()
-      : OMPClause(llvm::omp::OMPC_name, SourceLocation(), SourceLocation()) {}
+      : OMPClause(llvm::omp::OMPC_ompx_name, SourceLocation(),
+                  SourceLocation()) {}
 
   /// Sets the location of '('.
   void setLParenLoc(SourceLocation Loc) { LParenLoc = Loc; }
@@ -1752,7 +1753,7 @@ public:
   }
 
   static bool classof(const OMPClause *T) {
-    return T->getClauseKind() == llvm::omp::OMPC_name;
+    return T->getClauseKind() == llvm::omp::OMPC_ompx_name;
   }
 };
 

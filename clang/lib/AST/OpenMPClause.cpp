@@ -159,7 +159,7 @@ const OMPClauseWithPreInit *OMPClauseWithPreInit::get(const OMPClause *C) {
   case OMPC_at:
   case OMPC_severity:
   case OMPC_message:
-  case OMPC_name:
+  case OMPC_ompx_name:
   case OMPC_device_type:
   case OMPC_match:
   case OMPC_nontemporal:
@@ -243,7 +243,7 @@ const OMPClauseWithPostUpdate *OMPClauseWithPostUpdate::get(const OMPClause *C) 
   case OMPC_num_teams:
   case OMPC_thread_limit:
   case OMPC_priority:
-  case OMPC_name:
+  case OMPC_ompx_name:
   case OMPC_grainsize:
   case OMPC_nogroup:
   case OMPC_num_tasks:
