@@ -322,6 +322,14 @@ ompt_label_##id:
          ((uint64_t)addr) / FUZZY_ADDRESS_DISCARD_BYTES + 1,                   \
          ((uint64_t)addr) / FUZZY_ADDRESS_DISCARD_BYTES + 2, addr)
 
+#define register_ompt_selective_callback_t(name, type, selection)              \
+  do {                                                                         \
+    type f_##name = &on_##name;                                                \
+    if (ompt_x_set_selective_callback(                                         \
+            selection, name, (ompt_callback_t)f_##name) == ompt_set_never)     \
+      printf("0: Could not register callback '" #name "'\n");                  \
+  } while (0)
+
 #define register_ompt_callback_t(name, type)                                   \
   do {                                                                         \
     type f_##name = &on_##name;                                                \
@@ -1126,7 +1134,10 @@ int ompt_initialize(
   register_ompt_callback(ompt_callback_thread_begin);
   register_ompt_callback(ompt_callback_thread_end);
   register_ompt_callback(ompt_callback_error);
-  register_ompt_callback(ompt_x_callback_task_property);
+  //  register_ompt_callback(ompt_x_callback_task_property);
+  register_ompt_selective_callback_t(
+      ompt_x_callback_task_property, ompt_x_callback_task_property_t,
+      ompt_x_task_property_name | ompt_x_task_property_priority);
 
   printf("0: NULL_POINTER=%p\n", (void*)NULL);
   return 1; //success
