@@ -130,6 +130,7 @@ static void format_task_type(int type, char *buffer) {
 }
 
 static ompt_set_callback_t ompt_set_callback;
+static ompt_x_set_selective_callback_t ompt_x_set_selective_callback;
 static ompt_get_callback_t ompt_get_callback;
 static ompt_get_state_t ompt_get_state;
 static ompt_get_task_info_t ompt_get_task_info;
@@ -972,6 +973,32 @@ on_ompt_callback_task_dependence(
          second_task_data->value);
 }
 
+static void on_ompt_x_callback_task_property(ompt_data_t *task_data,
+                                             ompt_x_task_property_t kind,
+                                             void *property) {
+  switch (kind) {
+  case ompt_x_task_property_name: {
+    ompt_x_task_property_name_t *taskName =
+        (ompt_x_task_property_name_t *)(property);
+    printf("%" PRIu64 ":" _TOOL_PREFIX " ompt_event_task_name: task_id=%" PRIu64
+           ", name=%s\n",
+           ompt_get_thread_data()->value, task_data->value, taskName->name);
+    break;
+  }
+  case ompt_x_task_property_priority: {
+    ompt_x_task_property_priority_t *taskPriority =
+        (ompt_x_task_property_priority_t *)(property);
+    printf("%" PRIu64 ":" _TOOL_PREFIX
+           " ompt_event_task_priority: task_id=%" PRIu64 ", priority=%i\n",
+           ompt_get_thread_data()->value, task_data->value,
+           taskPriority->priority);
+    break;
+  }
+  default:
+    break;
+  }
+}
+
 static void
 on_ompt_callback_thread_begin(
   ompt_thread_t thread_type,
@@ -1052,6 +1079,8 @@ int ompt_initialize(
   ompt_data_t *tool_data)
 {
   ompt_set_callback = (ompt_set_callback_t) lookup("ompt_set_callback");
+  ompt_x_set_selective_callback =
+      (ompt_x_set_selective_callback_t)lookup("ompt_x_set_selective_callback");
   ompt_get_callback = (ompt_get_callback_t) lookup("ompt_get_callback");
   ompt_get_state = (ompt_get_state_t) lookup("ompt_get_state");
   ompt_get_task_info = (ompt_get_task_info_t) lookup("ompt_get_task_info");
@@ -1097,6 +1126,8 @@ int ompt_initialize(
   register_ompt_callback(ompt_callback_thread_begin);
   register_ompt_callback(ompt_callback_thread_end);
   register_ompt_callback(ompt_callback_error);
+  register_ompt_callback(ompt_x_callback_task_property);
+
   printf("0: NULL_POINTER=%p\n", (void*)NULL);
   return 1; //success
 }

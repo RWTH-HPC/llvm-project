@@ -107,6 +107,6 @@
 
 #define ompt_callback_error_implemented ompt_event_MAY_ALWAYS_OPTIONAL
 
-#define ompt_callback_task_name_implemented ompt_event_MAY_ALWAYS_OPTIONAL
+#define ompt_x_callback_task_property_implemented ompt_event_MAY_ALWAYS_OPTIONAL
 
 #endif

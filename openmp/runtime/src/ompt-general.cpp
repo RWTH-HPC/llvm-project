@@ -85,6 +85,7 @@ enum tool_setting_e {
  ****************************************************************************/
 
 ompt_callbacks_active_t ompt_enabled;
+ompt_x_callback_task_property_active_t omptTaskPropertyEnabled;
 
 ompt_state_info_t ompt_state_info[] = {
 #define ompt_state_macro(state, code) {#state, state},
@@ -570,8 +571,8 @@ OMPT_API_ROUTINE int ompt_enumerate_mutex_impls(int current_impl,
  * callbacks
  ****************************************************************************/
 
-OMPT_API_ROUTINE ompt_set_result_t ompt_set_callback(ompt_callbacks_t which,
-                                                     ompt_callback_t callback) {
+ompt_set_result_t __ompt_set_callback(ompt_callbacks_t which,
+                                      ompt_callback_t callback) {
   switch (which) {
 
 #define ompt_event_macro(event_name, callback_type, event_id)                  \
@@ -590,6 +591,39 @@ OMPT_API_ROUTINE ompt_set_result_t ompt_set_callback(ompt_callbacks_t which,
   default:
     return ompt_set_error;
   }
+  printf("should not be reached\n");
+}
+
+OMPT_API_ROUTINE ompt_set_result_t ompt_set_callback(ompt_callbacks_t which,
+                                                     ompt_callback_t callback) {
+  switch (which) {
+  case ompt_x_callback_task_property:
+    omptTaskPropertyEnabled.enable_all = 1;
+    break;
+  default:
+    break;
+  }
+  return __ompt_set_callback(which, callback);
+}
+
+OMPT_API_ROUTINE ompt_set_result_t ompt_x_set_selective_callback(
+    uint64_t selection, ompt_callbacks_t which, ompt_callback_t callback) {
+  if (!selection) {
+    return ompt_set_never;
+  }
+  switch (which) {
+  case ompt_x_callback_task_property:
+    omptTaskPropertyEnabled.enable_all = 0;
+    omptTaskPropertyEnabled.name = !!(selection & ompt_x_task_property_name);
+    omptTaskPropertyEnabled.priority =
+        !!(selection & ompt_x_task_property_priority);
+    omptTaskPropertyEnabled.threadset =
+        !!(selection & ompt_x_task_property_threadset);
+    break;
+  default:
+    break;
+  }
+  return __ompt_set_callback(which, callback);
 }
 
 OMPT_API_ROUTINE int ompt_get_callback(ompt_callbacks_t which,

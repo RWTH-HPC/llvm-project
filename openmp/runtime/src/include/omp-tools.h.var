@@ -39,6 +39,7 @@
     macro (ompt_enumerate_mutex_impls)      \
                                             \
     macro (ompt_set_callback)               \
+    macro (ompt_x_set_selective_callback)   \
     macro (ompt_get_callback)               \
                                             \
     macro (ompt_get_state)                  \
@@ -155,7 +156,7 @@
                                                                                                                          \
     macro (ompt_callback_dispatch,          ompt_callback_dispatch_t,          32) /* dispatch of work                */ \
     macro (ompt_callback_error,             ompt_callback_error_t,             37) /* error                           */ \
-    macro (ompt_callback_task_name,         ompt_callback_task_name_t,         39) /* error                           */
+    macro (ompt_x_callback_task_property,   ompt_x_callback_task_property_t,   63) /* task property                   */
 
 #define FOREACH_OMPT_DEVICE_EVENT(macro)                                                                                 \
     /*--- Mandatory Events ---*/                                                                                         \
@@ -257,7 +258,7 @@ typedef enum ompt_callbacks_t {
   ompt_callback_target_submit_emi        = 35,
   ompt_callback_target_map_emi           = 36,
   ompt_callback_error                    = 37,
-  ompt_callback_task_name                = 39
+  ompt_x_callback_task_property          = 63
 } ompt_callbacks_t;
 
 typedef enum ompt_record_t {
@@ -490,6 +491,12 @@ typedef enum ompt_state_t {
   ompt_state_undefined                        = 0x102
 } ompt_state_t;
 
+typedef enum ompt_x_task_property_t {
+  ompt_x_task_property_name = 0x1,
+  ompt_x_task_property_priority = 0x2,
+  ompt_x_task_property_threadset = 0x4
+}ompt_x_task_property_t;
+
 typedef uint64_t (*ompt_get_unique_id_t) (void);
 
 typedef uint64_t ompd_size_t;
@@ -613,6 +620,12 @@ typedef int (*ompt_enumerate_mutex_impls_t) (
   int current_impl,
   int *next_impl,
   const char **next_impl_name
+);
+
+typedef ompt_set_result_t (*ompt_x_set_selective_callback_t) (
+  uint64_t selection,
+  ompt_callbacks_t event,
+  ompt_callback_t callback
 );
 
 typedef ompt_set_result_t (*ompt_set_callback_t) (
@@ -1150,10 +1163,18 @@ typedef void (*ompt_callback_error_t) (
   const void *codeptr_ra
 );
 
-typedef void (*ompt_callback_task_name_t) (
+typedef struct ompt_x_task_property_name_t {
+  const char *name;
+} ompt_x_task_property_name_t;
+
+typedef struct ompt_x_task_property_priority_t {
+  int priority;
+} ompt_x_task_property_priority_t;
+
+typedef void (*ompt_x_callback_task_property_t) (
   ompt_data_t *task_data,
-  const char *message, 
-  size_t length
+  ompt_x_task_property_t kind,
+  void *task_property
 );
 
 typedef struct ompt_record_error_t {

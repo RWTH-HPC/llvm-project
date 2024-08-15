@@ -44,6 +44,13 @@ typedef struct ompt_callbacks_active_s {
 #undef ompt_event_macro
 } ompt_callbacks_active_t;
 
+typedef struct ompt_x_callback_task_property_active_t {
+  unsigned int enable_all : 1;
+  unsigned int name : 1;
+  unsigned int priority : 1;
+  unsigned int threadset : 1;
+} ompt_x_callback_task_property_active_t;
+
 #define TASK_TYPE_DETAILS_FORMAT(info)                                         \
   ((info->td_flags.task_serial || info->td_flags.tasking_ser)                  \
        ? ompt_task_undeferred                                                  \
@@ -115,6 +122,7 @@ void ompt_fini(void);
 int __kmp_control_tool(uint64_t command, uint64_t modifier, void *arg);
 
 extern ompt_callbacks_active_t ompt_enabled;
+extern ompt_x_callback_task_property_active_t omptTaskPropertyEnabled;
 
 #if KMP_OS_WINDOWS
 #define UNLIKELY(x) (x)

@@ -408,6 +408,17 @@ static kmp_int32 __kmp_push_priority_task(kmp_int32 gtid, kmp_info_t *thread,
            ("__kmp_push_priority_task: T#%d trying to push task %p, pri %d.\n",
             gtid, taskdata, pri));
 
+#if OMPT_SUPPORT && OMPT_OPTIONAL
+  if (UNLIKELY(ompt_enabled.ompt_x_callback_task_property) &&
+      (omptTaskPropertyEnabled.enable_all ||
+       omptTaskPropertyEnabled.priority)) {
+    ompt_x_task_property_priority_t prioProperty{pri};
+    ompt_callbacks.ompt_callback(ompt_x_callback_task_property)(
+        &(taskdata->ompt_task_info.task_data), ompt_x_task_property_priority,
+        &prioProperty);
+  }
+#endif
+
   // Find task queue specific to priority value
   kmp_task_pri_t *lst = task_team->tt.tt_task_pri_list;
   if (UNLIKELY(lst == NULL)) {
@@ -2129,11 +2140,6 @@ kmp_int32 __kmpc_omp_task(ident_t *loc_ref, kmp_int32 gtid,
   __kmp_assert_valid_gtid(gtid);
 
 #if OMPT_SUPPORT
-  printf("Task flags 0x%x\n", new_taskdata->td_flags);
-  if (new_taskdata->td_flags.named)
-    printf("Named Task: %p \"%s\"\n", new_task->data3.name,
-           new_task->data3.name);
-
   kmp_taskdata_t *parent = NULL;
   if (UNLIKELY(ompt_enabled.enabled)) {
     if (!new_taskdata->td_flags.started) {
@@ -2151,6 +2157,16 @@ kmp_int32 __kmpc_omp_task(ident_t *loc_ref, kmp_int32 gtid,
             TASK_TYPE_DETAILS_FORMAT(new_taskdata), 0,
             OMPT_LOAD_RETURN_ADDRESS(gtid));
       }
+      if (new_taskdata->td_flags.named &&
+          ompt_enabled.ompt_x_callback_task_property &&
+          (omptTaskPropertyEnabled.enable_all ||
+           omptTaskPropertyEnabled.name)) {
+        ompt_x_task_property_name_t nameProperty{new_task->data3.name};
+        ompt_callbacks.ompt_callback(ompt_x_callback_task_property)(
+            &(new_taskdata->ompt_task_info.task_data),
+            ompt_x_task_property_name, &nameProperty);
+      }
+
     } else {
       // We are scheduling the continuation of an UNTIED task.
       // Scheduling back to the parent task.
