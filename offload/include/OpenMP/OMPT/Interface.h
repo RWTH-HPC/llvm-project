@@ -31,6 +31,7 @@
 /// target_task_data representing the target task region.
 typedef ompt_data_t *(*ompt_get_task_data_t)();
 typedef ompt_data_t *(*ompt_get_target_task_data_t)();
+typedef ompt_data_t *(*ompt_get_target_data_t)();
 
 namespace llvm {
 namespace omp {
@@ -41,6 +42,7 @@ namespace ompt {
 /// target_task_data.
 static ompt_get_task_data_t ompt_get_task_data_fn;
 static ompt_get_target_task_data_t ompt_get_target_task_data_fn;
+static ompt_get_target_data_t ompt_get_target_data_fn;
 
 /// Used to maintain execution state for this thread
 class Interface {
@@ -220,6 +222,9 @@ private:
 
   /// Target region data
   ompt_data_t TargetData = ompt_data_none;
+
+  /// Target region data pointer
+  ompt_data_t *TargetDataPtr = nullptr;
 
   /// Task data representing the encountering task
   ompt_data_t *TaskData = nullptr;

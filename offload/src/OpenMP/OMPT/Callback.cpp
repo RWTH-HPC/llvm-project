@@ -52,6 +52,8 @@ ompt_get_callback_t llvm::omp::target::ompt::lookupCallbackByCode = nullptr;
 ompt_function_lookup_t llvm::omp::target::ompt::lookupCallbackByName = nullptr;
 ompt_get_target_task_data_t ompt_get_target_task_data_fn = nullptr;
 ompt_get_task_data_t ompt_get_task_data_fn = nullptr;
+ompt_get_target_data_t ompt_get_target_data_fn = nullptr;
+
 
 /// Unique correlation id
 static std::atomic<uint64_t> IdCounter(1);
@@ -425,14 +427,23 @@ void Interface::beginTargetRegion() {
   assert(ompt_get_target_task_data_fn &&
          "Calling a null target task data function");
   TargetTaskData = ompt_get_target_task_data_fn();
-  // Target state will be set later
-  TargetData = ompt_data_none;
+  // If TargetDataPtr is set, use its value to keep TargetData consistent across deferred target tasks
+  TargetDataPtr = ompt_get_target_data_fn();
+  if (TargetDataPtr)
+    TargetData = *TargetDataPtr;
+  else
+    TargetData = ompt_data_none;
 }
 
 void Interface::endTargetRegion() {
   TaskData = 0;
   TargetTaskData = 0;
+  // If TargetDataPtr is set, save local value to keep TargetData consistent across deferred target tasks
+  if (TargetDataPtr)
+    *TargetDataPtr = TargetData;
   TargetData = ompt_data_none;
+  TargetDataPtr = 0;
+
 }
 
 /// Used to maintain the finalization functions that are received
@@ -472,6 +483,7 @@ int llvm::omp::target::ompt::initializeLibrary(ompt_function_lookup_t lookup,
   bindOmptFunctionName(ompt_get_callback, lookupCallbackByCode);
   bindOmptFunctionName(ompt_get_task_data, ompt_get_task_data_fn);
   bindOmptFunctionName(ompt_get_target_task_data, ompt_get_target_task_data_fn);
+  bindOmptFunctionName(ompt_get_target_data, ompt_get_target_data_fn);
 #undef bindOmptFunctionName
 
   // Store pointer of 'ompt_libomp_target_fn_lookup' for use by libomptarget
@@ -480,6 +492,7 @@ int llvm::omp::target::ompt::initializeLibrary(ompt_function_lookup_t lookup,
   assert(lookupCallbackByCode && "lookupCallbackByCode should be non-null");
   assert(lookupCallbackByName && "lookupCallbackByName should be non-null");
   assert(ompt_get_task_data_fn && "ompt_get_task_data_fn should be non-null");
+  assert(ompt_get_target_data_fn && "ompt_get_target_data_fn should be non-null");
   assert(ompt_get_target_task_data_fn &&
          "ompt_get_target_task_data_fn should be non-null");
   assert(LibraryFinalizer == nullptr &&

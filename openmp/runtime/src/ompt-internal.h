@@ -59,6 +59,7 @@ typedef struct ompt_callbacks_active_s {
 typedef struct {
   ompt_frame_t frame;
   ompt_data_t task_data;
+  ompt_data_t target_data;
   struct kmp_taskdata *scheduling_parent;
   int thread_num;
   ompt_dispatch_chunk_t dispatch_chunk;

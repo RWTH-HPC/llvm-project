@@ -41,6 +41,8 @@ ompt_data_t *__ompt_get_task_data();
 
 ompt_data_t *__ompt_get_target_task_data();
 
+ompt_data_t *__ompt_get_target_data();
+
 ompt_task_info_t *__ompt_get_task_info_object(int depth);
 
 int __ompt_get_parallel_info_internal(int ancestor_level,
