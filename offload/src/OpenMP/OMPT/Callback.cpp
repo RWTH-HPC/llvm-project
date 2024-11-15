@@ -83,7 +83,7 @@ void Interface::beginTargetDataAlloc(int64_t DeviceId, void *HstPtrBegin,
     // HostOpId will be set by the tool. Invoke the tool supplied data op EMI
     // callback
     ompt_callback_target_data_op_emi_fn(
-        ompt_scope_begin, TargetTaskData, &TargetData, &HostOpId,
+        ompt_scope_begin, &TargetTaskData, &TargetData, &HostOpId,
         ompt_target_data_alloc, HstPtrBegin,
         /*SrcDeviceNum=*/omp_get_initial_device(), *TgtPtrBegin,
         /*TgtDeviceNum=*/DeviceId, Size, Code);
@@ -106,7 +106,7 @@ void Interface::endTargetDataAlloc(int64_t DeviceId, void *HstPtrBegin,
     // HostOpId will be set by the tool. Invoke the tool supplied data op EMI
     // callback
     ompt_callback_target_data_op_emi_fn(
-        ompt_scope_end, TargetTaskData, &TargetData, &HostOpId,
+        ompt_scope_end, &TargetTaskData, &TargetData, &HostOpId,
         ompt_target_data_alloc, HstPtrBegin,
         /*SrcDeviceNum=*/omp_get_initial_device(), *TgtPtrBegin,
         /*TgtDeviceNum=*/DeviceId, Size, Code);
@@ -122,7 +122,7 @@ void Interface::beginTargetDataSubmit(int64_t SrcDeviceId, void *SrcPtrBegin,
     // HostOpId will be set by the tool. Invoke the tool supplied data op EMI
     // callback
     ompt_callback_target_data_op_emi_fn(
-        ompt_scope_begin, TargetTaskData, &TargetData, &HostOpId,
+        ompt_scope_begin, &TargetTaskData, &TargetData, &HostOpId,
         ompt_target_data_transfer_to_device, SrcPtrBegin, SrcDeviceId,
         DstPtrBegin, DstDeviceId, Size, Code);
   } else if (ompt_callback_target_data_op_fn) {
@@ -143,7 +143,7 @@ void Interface::endTargetDataSubmit(int64_t SrcDeviceId, void *SrcPtrBegin,
     // HostOpId will be set by the tool. Invoke the tool supplied data op EMI
     // callback
     ompt_callback_target_data_op_emi_fn(
-        ompt_scope_end, TargetTaskData, &TargetData, &HostOpId,
+        ompt_scope_end, &TargetTaskData, &TargetData, &HostOpId,
         ompt_target_data_transfer_to_device, SrcPtrBegin, SrcDeviceId,
         DstPtrBegin, DstDeviceId, Size, Code);
   }
@@ -157,7 +157,7 @@ void Interface::beginTargetDataDelete(int64_t DeviceId, void *TgtPtrBegin,
     // HostOpId will be set by the tool. Invoke the tool supplied data op EMI
     // callback
     ompt_callback_target_data_op_emi_fn(
-        ompt_scope_begin, TargetTaskData, &TargetData, &HostOpId,
+        ompt_scope_begin, &TargetTaskData, &TargetData, &HostOpId,
         ompt_target_data_delete, TgtPtrBegin, DeviceId,
         /*TgtPtrBegin=*/nullptr, /*TgtDeviceNum=*/-1, /*Bytes=*/0, Code);
   } else if (ompt_callback_target_data_op_fn) {
@@ -178,7 +178,7 @@ void Interface::endTargetDataDelete(int64_t DeviceId, void *TgtPtrBegin,
     // HostOpId will be set by the tool. Invoke the tool supplied data op EMI
     // callback
     ompt_callback_target_data_op_emi_fn(
-        ompt_scope_end, TargetTaskData, &TargetData, &HostOpId,
+        ompt_scope_end, &TargetTaskData, &TargetData, &HostOpId,
         ompt_target_data_delete, TgtPtrBegin, DeviceId,
         /*TgtPtrBegin=*/nullptr, /*TgtDeviceNum=*/-1, /*Bytes=*/0, Code);
   }
@@ -193,7 +193,7 @@ void Interface::beginTargetDataRetrieve(int64_t SrcDeviceId, void *SrcPtrBegin,
     // HostOpId will be set by the tool. Invoke the tool supplied data op EMI
     // callback
     ompt_callback_target_data_op_emi_fn(
-        ompt_scope_begin, TargetTaskData, &TargetData, &HostOpId,
+        ompt_scope_begin, &TargetTaskData, &TargetData, &HostOpId,
         ompt_target_data_transfer_from_device, SrcPtrBegin, SrcDeviceId,
         DstPtrBegin, DstDeviceId, Size, Code);
   } else if (ompt_callback_target_data_op_fn) {
@@ -214,7 +214,7 @@ void Interface::endTargetDataRetrieve(int64_t SrcDeviceId, void *SrcPtrBegin,
     // HostOpId will be set by the tool. Invoke the tool supplied data op EMI
     // callback
     ompt_callback_target_data_op_emi_fn(
-        ompt_scope_end, TargetTaskData, &TargetData, &HostOpId,
+        ompt_scope_end, &TargetTaskData, &TargetData, &HostOpId,
         ompt_target_data_transfer_from_device, SrcPtrBegin, SrcDeviceId,
         DstPtrBegin, DstDeviceId, Size, Code);
   }
@@ -249,7 +249,7 @@ void Interface::beginTargetDataEnter(int64_t DeviceId, void *Code) {
   if (ompt_callback_target_emi_fn) {
     // Invoke the tool supplied target EMI callback
     ompt_callback_target_emi_fn(ompt_target_enter_data, ompt_scope_begin,
-                                DeviceId, TaskData, TargetTaskData, &TargetData,
+                                DeviceId, TaskData, &TargetTaskData, &TargetData,
                                 Code);
   } else if (ompt_callback_target_fn) {
     // Invoke the tool supplied target callback
@@ -262,7 +262,7 @@ void Interface::endTargetDataEnter(int64_t DeviceId, void *Code) {
   if (ompt_callback_target_emi_fn) {
     // Invoke the tool supplied target EMI callback
     ompt_callback_target_emi_fn(ompt_target_enter_data, ompt_scope_end,
-                                DeviceId, TaskData, TargetTaskData, &TargetData,
+                                DeviceId, TaskData, &TargetTaskData, &TargetData,
                                 Code);
   } else if (ompt_callback_target_fn) {
     // Invoke the tool supplied target callback
@@ -277,7 +277,7 @@ void Interface::beginTargetDataExit(int64_t DeviceId, void *Code) {
   if (ompt_callback_target_emi_fn) {
     // Invoke the tool supplied target EMI callback
     ompt_callback_target_emi_fn(ompt_target_exit_data, ompt_scope_begin,
-                                DeviceId, TaskData, TargetTaskData, &TargetData,
+                                DeviceId, TaskData, &TargetTaskData, &TargetData,
                                 Code);
   } else if (ompt_callback_target_fn) {
     TargetData.value = createRegionId();
@@ -291,7 +291,7 @@ void Interface::endTargetDataExit(int64_t DeviceId, void *Code) {
   if (ompt_callback_target_emi_fn) {
     // Invoke the tool supplied target EMI callback
     ompt_callback_target_emi_fn(ompt_target_exit_data, ompt_scope_end, DeviceId,
-                                TaskData, TargetTaskData, &TargetData, Code);
+                                TaskData, &TargetTaskData, &TargetData, Code);
   } else if (ompt_callback_target_fn) {
     // Invoke the tool supplied target callback
     ompt_callback_target_fn(ompt_target_exit_data, ompt_scope_end, DeviceId,
@@ -305,7 +305,7 @@ void Interface::beginTargetUpdate(int64_t DeviceId, void *Code) {
   if (ompt_callback_target_emi_fn) {
     // Invoke the tool supplied target EMI callback
     ompt_callback_target_emi_fn(ompt_target_update, ompt_scope_begin, DeviceId,
-                                TaskData, TargetTaskData, &TargetData, Code);
+                                TaskData, &TargetTaskData, &TargetData, Code);
   } else if (ompt_callback_target_fn) {
     TargetData.value = createRegionId();
     // Invoke the tool supplied target callback
@@ -318,7 +318,7 @@ void Interface::endTargetUpdate(int64_t DeviceId, void *Code) {
   if (ompt_callback_target_emi_fn) {
     // Invoke the tool supplied target EMI callback
     ompt_callback_target_emi_fn(ompt_target_update, ompt_scope_end, DeviceId,
-                                TaskData, TargetTaskData, &TargetData, Code);
+                                TaskData, &TargetTaskData, &TargetData, Code);
   } else if (ompt_callback_target_fn) {
     // Invoke the tool supplied target callback
     ompt_callback_target_fn(ompt_target_update, ompt_scope_end, DeviceId,
@@ -333,7 +333,7 @@ void Interface::beginTargetAssociatePointer(int64_t DeviceId, void *HstPtrBegin,
   beginTargetDataOperation();
   if (ompt_callback_target_data_op_emi_fn) {
     ompt_callback_target_data_op_emi_fn(
-        ompt_scope_begin, TargetTaskData, &TargetData, &HostOpId,
+        ompt_scope_begin, &TargetTaskData, &TargetData, &HostOpId,
         ompt_target_data_associate, HstPtrBegin, omp_get_initial_device(),
         TgtPtrBegin, DeviceId, Size, Code);
   } else if (ompt_callback_target_data_op_fn) {
@@ -349,7 +349,7 @@ void Interface::endTargetAssociatePointer(int64_t DeviceId, void *HstPtrBegin,
                                           void *Code) {
   if (ompt_callback_target_data_op_emi_fn) {
     ompt_callback_target_data_op_emi_fn(
-        ompt_scope_end, TargetTaskData, &TargetData, &HostOpId,
+        ompt_scope_end, &TargetTaskData, &TargetData, &HostOpId,
         ompt_target_data_associate, HstPtrBegin, omp_get_initial_device(),
         TgtPtrBegin, DeviceId, Size, Code);
   }
@@ -362,7 +362,7 @@ void Interface::beginTargetDisassociatePointer(int64_t DeviceId,
   beginTargetDataOperation();
   if (ompt_callback_target_data_op_emi_fn) {
     ompt_callback_target_data_op_emi_fn(
-        ompt_scope_begin, TargetTaskData, &TargetData, &HostOpId,
+        ompt_scope_begin, &TargetTaskData, &TargetData, &HostOpId,
         ompt_target_data_disassociate, HstPtrBegin, omp_get_initial_device(),
         TgtPtrBegin, DeviceId, Size, Code);
   } else if (ompt_callback_target_data_op_fn) {
@@ -378,7 +378,7 @@ void Interface::endTargetDisassociatePointer(int64_t DeviceId,
                                              void *Code) {
   if (ompt_callback_target_data_op_emi_fn) {
     ompt_callback_target_data_op_emi_fn(
-        ompt_scope_end, TargetTaskData, &TargetData, &HostOpId,
+        ompt_scope_end, &TargetTaskData, &TargetData, &HostOpId,
         ompt_target_data_disassociate, HstPtrBegin, omp_get_initial_device(),
         TgtPtrBegin, DeviceId, Size, Code);
   }
@@ -389,7 +389,7 @@ void Interface::beginTarget(int64_t DeviceId, void *Code) {
   if (ompt_callback_target_emi_fn) {
     // Invoke the tool supplied target EMI callback
     ompt_callback_target_emi_fn(ompt_target, ompt_scope_begin, DeviceId,
-                                TaskData, TargetTaskData, &TargetData, Code);
+                                TaskData, &TargetTaskData, &TargetData, Code);
   } else if (ompt_callback_target_fn) {
     TargetData.value = createRegionId();
     // Invoke the tool supplied target callback
@@ -402,7 +402,7 @@ void Interface::endTarget(int64_t DeviceId, void *Code) {
   if (ompt_callback_target_emi_fn) {
     // Invoke the tool supplied target EMI callback
     ompt_callback_target_emi_fn(ompt_target, ompt_scope_end, DeviceId, TaskData,
-                                TargetTaskData, &TargetData, Code);
+                                &TargetTaskData, &TargetData, Code);
   } else if (ompt_callback_target_fn) {
     // Invoke the tool supplied target callback
     ompt_callback_target_fn(ompt_target, ompt_scope_end, DeviceId, TaskData,
@@ -426,7 +426,12 @@ void Interface::beginTargetRegion() {
   // Set up target task state
   assert(ompt_get_target_task_data_fn &&
          "Calling a null target task data function");
-  TargetTaskData = ompt_get_target_task_data_fn();
+  TargetTaskDataPtr = ompt_get_target_task_data_fn();
+  // If TargetTaskDataPtr is set, use its value to keep TargetTaskData consistent across deferred target tasks
+  if (TargetTaskDataPtr)
+      TargetTaskData = *TargetTaskDataPtr;
+  else
+      TargetTaskData = ompt_data_none;
   // If TargetDataPtr is set, use its value to keep TargetData consistent across deferred target tasks
   TargetDataPtr = ompt_get_target_data_fn();
   if (TargetDataPtr)
@@ -437,13 +442,16 @@ void Interface::beginTargetRegion() {
 
 void Interface::endTargetRegion() {
   TaskData = 0;
-  TargetTaskData = 0;
   // If TargetDataPtr is set, save local value to keep TargetData consistent across deferred target tasks
   if (TargetDataPtr)
     *TargetDataPtr = TargetData;
+  // If TargetTaskDataPtr is set, save local value to keep TargetTaskData consistent across deferred target tasks
+  if (TargetTaskDataPtr)
+      *TargetTaskDataPtr = TargetTaskData;
   TargetData = ompt_data_none;
   TargetDataPtr = 0;
-
+  TargetTaskData = ompt_data_none;
+  TargetTaskDataPtr = 0;
 }
 
 /// Used to maintain the finalization functions that are received

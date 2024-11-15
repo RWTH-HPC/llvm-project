@@ -230,7 +230,10 @@ private:
   ompt_data_t *TaskData = nullptr;
 
   /// Target task data representing the target task region
-  ompt_data_t *TargetTaskData = nullptr;
+  ompt_data_t TargetTaskData = ompt_data_none;
+
+  /// Target task data representing the target task region
+  ompt_data_t *TargetTaskDataPtr = nullptr;
 
   /// Used for marking begin of a data operation
   void beginTargetDataOperation();
