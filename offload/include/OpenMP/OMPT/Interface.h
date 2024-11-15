@@ -235,6 +235,9 @@ private:
   /// Target task data representing the target task region
   ompt_data_t *TargetTaskDataPtr = nullptr;
 
+  /// Flag to indicate whether the target region is for a runtime routine
+  bool IsRuntimeRoutine = true;
+
   /// Used for marking begin of a data operation
   void beginTargetDataOperation();
 

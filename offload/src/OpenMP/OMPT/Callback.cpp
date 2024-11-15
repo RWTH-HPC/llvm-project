@@ -412,10 +412,44 @@ void Interface::endTarget(int64_t DeviceId, void *Code) {
 }
 
 void Interface::beginTargetDataOperation() {
+  // Check if this is a standalone data operation
+  if (IsRuntimeRoutine) {
+    // Set up task state
+    assert(ompt_get_task_data_fn && "Calling a null task data function");
+    TaskData = ompt_get_task_data_fn();
+    // Set up target task and target state
+    assert(ompt_get_target_task_data_fn &&
+          "Calling a null target task data function");
+    TargetTaskDataPtr = ompt_get_target_task_data_fn();
+    TargetDataPtr = ompt_get_target_data_fn();
+    // If TargetDataPtr is set, use its value to keep TargetData consistent across deferred target tasks
+    if (TargetDataPtr)
+      TargetData = *TargetDataPtr;
+    else
+      TargetData = ompt_data_none;
+
+    if (TargetTaskDataPtr)
+      TargetTaskData = *TargetTaskDataPtr;
+    else
+      TargetTaskData = ompt_data_none;
+  }
   DP("in ompt_target_region_begin (TargetRegionId = %lu)\n", TargetData.value);
 }
 
 void Interface::endTargetDataOperation() {
+  // Check if this is a standalone data operation
+  if (IsRuntimeRoutine) {
+    TaskData = 0;
+    // If TargetDataPtr is set, save local value to keep TargetData consistent across deferred target tasks
+    if (TargetDataPtr)
+      *TargetDataPtr = TargetData;
+    if (TargetTaskDataPtr)
+      *TargetTaskDataPtr = TargetTaskData;
+    TargetData = ompt_data_none;
+    TargetDataPtr = 0;
+    TargetTaskData = ompt_data_none;
+    TargetTaskDataPtr = 0;
+  }
   DP("in ompt_target_region_end (TargetRegionId = %lu)\n", TargetData.value);
 }
 
@@ -438,6 +472,7 @@ void Interface::beginTargetRegion() {
     TargetData = *TargetDataPtr;
   else
     TargetData = ompt_data_none;
+  IsRuntimeRoutine = false;
 }
 
 void Interface::endTargetRegion() {
@@ -452,6 +487,7 @@ void Interface::endTargetRegion() {
   TargetDataPtr = 0;
   TargetTaskData = ompt_data_none;
   TargetTaskDataPtr = 0;
+  IsRuntimeRoutine = true;
 }
 
 /// Used to maintain the finalization functions that are received
