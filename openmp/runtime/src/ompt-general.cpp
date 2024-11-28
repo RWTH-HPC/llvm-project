@@ -885,17 +885,15 @@ static ompt_interface_fn_t ompt_fn_lookup(const char *s) {
   return NULL;
 }
 
-static ompt_data_t *ompt_get_task_data() { 
-  return __ompt_get_generating_task(); 
+static ompt_data_t *ompt_get_task_data() {
+  return __ompt_get_generating_task();
 }
 
 static ompt_data_t *ompt_get_target_task_data() {
   return __ompt_get_target_task_data();
 }
 
-static ompt_data_t *ompt_get_target_data() {
-  return __ompt_get_target_data();
-}
+static ompt_data_t *ompt_get_target_data() { return __ompt_get_target_data(); }
 
 /// Lookup function to query libomp callbacks registered by the tool
 static ompt_interface_fn_t ompt_libomp_target_fn_lookup(const char *s) {

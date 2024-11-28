@@ -54,7 +54,6 @@ ompt_get_target_task_data_t ompt_get_target_task_data_fn = nullptr;
 ompt_get_task_data_t ompt_get_task_data_fn = nullptr;
 ompt_get_target_data_t ompt_get_target_data_fn = nullptr;
 
-
 /// Unique correlation id
 static std::atomic<uint64_t> IdCounter(1);
 
@@ -249,8 +248,8 @@ void Interface::beginTargetDataEnter(int64_t DeviceId, void *Code) {
   if (ompt_callback_target_emi_fn) {
     // Invoke the tool supplied target EMI callback
     ompt_callback_target_emi_fn(ompt_target_enter_data, ompt_scope_begin,
-                                DeviceId, TaskData, &TargetTaskData, &TargetData,
-                                Code);
+                                DeviceId, TaskData, &TargetTaskData,
+                                &TargetData, Code);
   } else if (ompt_callback_target_fn) {
     // Invoke the tool supplied target callback
     ompt_callback_target_fn(ompt_target_enter_data, ompt_scope_begin, DeviceId,
@@ -262,8 +261,8 @@ void Interface::endTargetDataEnter(int64_t DeviceId, void *Code) {
   if (ompt_callback_target_emi_fn) {
     // Invoke the tool supplied target EMI callback
     ompt_callback_target_emi_fn(ompt_target_enter_data, ompt_scope_end,
-                                DeviceId, TaskData, &TargetTaskData, &TargetData,
-                                Code);
+                                DeviceId, TaskData, &TargetTaskData,
+                                &TargetData, Code);
   } else if (ompt_callback_target_fn) {
     // Invoke the tool supplied target callback
     ompt_callback_target_fn(ompt_target_enter_data, ompt_scope_end, DeviceId,
@@ -277,8 +276,8 @@ void Interface::beginTargetDataExit(int64_t DeviceId, void *Code) {
   if (ompt_callback_target_emi_fn) {
     // Invoke the tool supplied target EMI callback
     ompt_callback_target_emi_fn(ompt_target_exit_data, ompt_scope_begin,
-                                DeviceId, TaskData, &TargetTaskData, &TargetData,
-                                Code);
+                                DeviceId, TaskData, &TargetTaskData,
+                                &TargetData, Code);
   } else if (ompt_callback_target_fn) {
     TargetData.value = createRegionId();
     // Invoke the tool supplied target callback
@@ -419,10 +418,11 @@ void Interface::beginTargetDataOperation() {
     TaskData = ompt_get_task_data_fn();
     // Set up target task and target state
     assert(ompt_get_target_task_data_fn &&
-          "Calling a null target task data function");
+           "Calling a null target task data function");
     TargetTaskDataPtr = ompt_get_target_task_data_fn();
     TargetDataPtr = ompt_get_target_data_fn();
-    // If TargetDataPtr is set, use its value to keep TargetData consistent across deferred target tasks
+    // If TargetDataPtr is set, use its value to keep TargetData consistent
+    // across deferred target tasks
     if (TargetDataPtr)
       TargetData = *TargetDataPtr;
     else
@@ -440,7 +440,8 @@ void Interface::endTargetDataOperation() {
   // Check if this is a standalone data operation
   if (IsRuntimeRoutine) {
     TaskData = 0;
-    // If TargetDataPtr is set, save local value to keep TargetData consistent across deferred target tasks
+    // If TargetDataPtr is set, save local value to keep TargetData consistent
+    // across deferred target tasks
     if (TargetDataPtr)
       *TargetDataPtr = TargetData;
     if (TargetTaskDataPtr)
@@ -461,12 +462,14 @@ void Interface::beginTargetRegion() {
   assert(ompt_get_target_task_data_fn &&
          "Calling a null target task data function");
   TargetTaskDataPtr = ompt_get_target_task_data_fn();
-  // If TargetTaskDataPtr is set, use its value to keep TargetTaskData consistent across deferred target tasks
+  // If TargetTaskDataPtr is set, use its value to keep TargetTaskData
+  // consistent across deferred target tasks
   if (TargetTaskDataPtr)
-      TargetTaskData = *TargetTaskDataPtr;
+    TargetTaskData = *TargetTaskDataPtr;
   else
-      TargetTaskData = ompt_data_none;
-  // If TargetDataPtr is set, use its value to keep TargetData consistent across deferred target tasks
+    TargetTaskData = ompt_data_none;
+  // If TargetDataPtr is set, use its value to keep TargetData consistent across
+  // deferred target tasks
   TargetDataPtr = ompt_get_target_data_fn();
   if (TargetDataPtr)
     TargetData = *TargetDataPtr;
@@ -477,12 +480,14 @@ void Interface::beginTargetRegion() {
 
 void Interface::endTargetRegion() {
   TaskData = 0;
-  // If TargetDataPtr is set, save local value to keep TargetData consistent across deferred target tasks
+  // If TargetDataPtr is set, save local value to keep TargetData consistent
+  // across deferred target tasks
   if (TargetDataPtr)
     *TargetDataPtr = TargetData;
-  // If TargetTaskDataPtr is set, save local value to keep TargetTaskData consistent across deferred target tasks
+  // If TargetTaskDataPtr is set, save local value to keep TargetTaskData
+  // consistent across deferred target tasks
   if (TargetTaskDataPtr)
-      *TargetTaskDataPtr = TargetTaskData;
+    *TargetTaskDataPtr = TargetTaskData;
   TargetData = ompt_data_none;
   TargetDataPtr = 0;
   TargetTaskData = ompt_data_none;
@@ -536,7 +541,8 @@ int llvm::omp::target::ompt::initializeLibrary(ompt_function_lookup_t lookup,
   assert(lookupCallbackByCode && "lookupCallbackByCode should be non-null");
   assert(lookupCallbackByName && "lookupCallbackByName should be non-null");
   assert(ompt_get_task_data_fn && "ompt_get_task_data_fn should be non-null");
-  assert(ompt_get_target_data_fn && "ompt_get_target_data_fn should be non-null");
+  assert(ompt_get_target_data_fn &&
+         "ompt_get_target_data_fn should be non-null");
   assert(ompt_get_target_task_data_fn &&
          "ompt_get_target_task_data_fn should be non-null");
   assert(LibraryFinalizer == nullptr &&
