@@ -49,6 +49,7 @@ typedef struct ompt_x_callback_task_property_active_t {
   unsigned int name : 1;
   unsigned int priority : 1;
   unsigned int threadset : 1;
+  unsigned int created : 1;
 } ompt_x_callback_task_property_active_t;
 
 #define TASK_TYPE_DETAILS_FORMAT(info)                                         \

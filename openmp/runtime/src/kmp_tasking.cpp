@@ -762,6 +762,20 @@ static inline void __ompt_task_start(kmp_task_t *task,
   taskdata->ompt_task_info.scheduling_parent = current_task;
 }
 
+// __ompt_task_creation_end:
+//   Build and trigger task creation end event
+static inline void __ompt_task_creation_end(kmp_task_t *task,
+                                            kmp_taskdata_t *current_task) {
+  kmp_taskdata_t *taskdata = KMP_TASK_TO_TASKDATA(task);
+  /* let OMPT know that we're creating a task */
+  if ((ompt_enabled.ompt_x_callback_task_property) &&
+      (omptTaskPropertyEnabled.enable_all || omptTaskPropertyEnabled.created)) {
+    ompt_callbacks.ompt_callback(ompt_x_callback_task_property)(
+        &(current_task->ompt_task_info.task_data), ompt_x_task_property_created,
+        &(taskdata->ompt_task_info.task_data));
+  }
+}
+
 // __ompt_task_finish:
 //   Build and trigger final task-schedule event
 static inline void __ompt_task_finish(kmp_task_t *task,
@@ -2009,7 +2023,18 @@ kmp_int32 __kmpc_omp_task_parts(ident_t *loc_ref, kmp_int32 gtid,
   { // Execute this task immediately
     kmp_taskdata_t *current_task = __kmp_threads[gtid]->th.th_current_task;
     new_taskdata->td_flags.task_serial = 1;
+#if OMPT_SUPPORT
+    if (UNLIKELY(ompt_enabled.enabled))
+      __ompt_task_creation_end(new_task, current_task);
+#endif
     __kmp_invoke_task(gtid, new_task, current_task);
+#if OMPT_SUPPORT
+  } else {
+    if (UNLIKELY(ompt_enabled.enabled)) {
+      kmp_taskdata_t *current_task = __kmp_threads[gtid]->th.th_current_task;
+      __ompt_task_creation_end(new_task, current_task);
+    }
+#endif
   }
 
   KA_TRACE(
@@ -2038,7 +2063,7 @@ kmp_int32 __kmpc_omp_task_parts(ident_t *loc_ref, kmp_int32 gtid,
 //    TASK_CURRENT_QUEUED (1) if suspended and queued the current task to be
 //    resumed later.
 kmp_int32 __kmp_omp_task(kmp_int32 gtid, kmp_task_t *new_task,
-                         bool serialize_immediate) {
+                         bool serialize_immediate, bool release_blocked) {
   kmp_taskdata_t *new_taskdata = KMP_TASK_TO_TASKDATA(new_task);
 
 #if OMPX_TASKGRAPH
@@ -2094,6 +2119,10 @@ kmp_int32 __kmp_omp_task(kmp_int32 gtid, kmp_task_t *new_task,
       __kmp_push_task(gtid, new_task) == TASK_NOT_PUSHED) // if cannot defer
   { // Execute this task immediately
     kmp_taskdata_t *current_task = __kmp_threads[gtid]->th.th_current_task;
+#if OMPT_SUPPORT
+    if (UNLIKELY(ompt_enabled.enabled) && !release_blocked)
+      __ompt_task_creation_end(new_task, current_task);
+#endif
     if (serialize_immediate)
       new_taskdata->td_flags.task_serial = 1;
     __kmp_invoke_task(gtid, new_task, current_task);
@@ -2111,6 +2140,17 @@ kmp_int32 __kmp_omp_task(kmp_int32 gtid, kmp_task_t *new_task,
         break; // awake one thread at a time
       }
     }
+#if OMPT_SUPPORT
+    if (UNLIKELY(ompt_enabled.enabled) && !release_blocked) {
+      kmp_taskdata_t *current_task = __kmp_threads[gtid]->th.th_current_task;
+      __ompt_task_creation_end(new_task, current_task);
+    }
+  } else {
+    if (UNLIKELY(ompt_enabled.enabled) && !release_blocked) {
+      kmp_taskdata_t *current_task = __kmp_threads[gtid]->th.th_current_task;
+      __ompt_task_creation_end(new_task, current_task);
+    }
+#endif
   }
   return TASK_CURRENT_NOT_QUEUED;
 }

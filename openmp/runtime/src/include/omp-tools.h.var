@@ -494,7 +494,8 @@ typedef enum ompt_state_t {
 typedef enum ompt_x_task_property_t {
   ompt_x_task_property_name = 0x1,
   ompt_x_task_property_priority = 0x2,
-  ompt_x_task_property_threadset = 0x4
+  ompt_x_task_property_threadset = 0x4,
+  ompt_x_task_property_created = 0x8
 }ompt_x_task_property_t;
 
 typedef uint64_t (*ompt_get_unique_id_t) (void);
