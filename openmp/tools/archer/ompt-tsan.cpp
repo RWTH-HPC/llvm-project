@@ -51,6 +51,7 @@
 #endif
 
 static int hasReductionCallback;
+static bool hasTsanLockAnnotationPCIface{true};
 
 namespace {
 class ArcherFlags {
@@ -174,6 +175,14 @@ DECLARE_TSAN_FUNCTION(AnnotateRWLockAcquiredPC, const char *, int,
                       const volatile void *, size_t, const void *)
 DECLARE_TSAN_FUNCTION(AnnotateRWLockReleasedPC, const char *, int,
                       const volatile void *, size_t, const void *)
+DECLARE_TSAN_FUNCTION(AnnotateRWLockCreate, const char *, int,
+                      const volatile void *)
+DECLARE_TSAN_FUNCTION(AnnotateRWLockDestroy, const char *, int,
+                      const volatile void *)
+DECLARE_TSAN_FUNCTION(AnnotateRWLockAcquired, const char *, int,
+                      const volatile void *, size_t)
+DECLARE_TSAN_FUNCTION(AnnotateRWLockReleased, const char *, int,
+                      const volatile void *, size_t)
 }
 
 // This marker is used to define a happens-before arc. The race detector will
@@ -200,14 +209,34 @@ DECLARE_TSAN_FUNCTION(AnnotateRWLockReleasedPC, const char *, int,
   AnnotateNewMemory(__FILE__, __LINE__, addr, size)
 
 // Locks
-#define TsanRWLockCreate(mutex, pc)                                            \
-  AnnotateRWLockCreatePC(__FILE__, __LINE__, mutex, pc)
-#define TsanRWLockDestroy(mutex, pc)                                           \
-  AnnotateRWLockDestroyPC(__FILE__, __LINE__, mutex, pc)
-#define TsanRWLockAcquired(mutex, isw, pc)                                     \
-  AnnotateRWLockAcquiredPC(__FILE__, __LINE__, mutex, isw, pc)
-#define TsanRWLockReleased(mutex, isw, pc)                                     \
-  AnnotateRWLockReleasedPC(__FILE__, __LINE__, mutex, isw, pc)
+#define TsanRWLockCreate(mutex)                                                \
+  do {                                                                         \
+    if (hasTsanLockAnnotationPCIface)                                          \
+      AnnotateRWLockCreatePC(__FILE__, __LINE__, mutex, codeptr_ra);           \
+    else                                                                       \
+      AnnotateRWLockCreate(__FILE__, __LINE__, mutex);                         \
+  } while (0)
+#define TsanRWLockDestroy(mutex)                                               \
+  do {                                                                         \
+    if (hasTsanLockAnnotationPCIface)                                          \
+      AnnotateRWLockDestroyPC(__FILE__, __LINE__, mutex, codeptr_ra);          \
+    else                                                                       \
+      AnnotateRWLockDestroy(__FILE__, __LINE__, mutex);                        \
+  } while (0)
+#define TsanRWLockAcquired(mutex, isw)                                         \
+  do {                                                                         \
+    if (hasTsanLockAnnotationPCIface)                                          \
+      AnnotateRWLockAcquiredPC(__FILE__, __LINE__, mutex, isw, codeptr_ra);    \
+    else                                                                       \
+      AnnotateRWLockAcquired(__FILE__, __LINE__, mutex, isw);                  \
+  } while (0)
+#define TsanRWLockReleased(mutex, isw)                                         \
+  do {                                                                         \
+    if (hasTsanLockAnnotationPCIface)                                          \
+      AnnotateRWLockReleasedPC(__FILE__, __LINE__, mutex, isw, codeptr_ra);    \
+    else                                                                       \
+      AnnotateRWLockReleased(__FILE__, __LINE__, mutex, isw);                  \
+  } while (0)
 #endif
 
 // Function entry/exit
@@ -1126,7 +1155,7 @@ static void ompt_tsan_lock_init(ompt_mutex_t kind, unsigned int hint,
   LocksMutex.lock();
   std::mutex &Lock = Locks[wait_id];
   LocksMutex.unlock();
-  TsanRWLockCreate(&Lock, codeptr_ra);
+  TsanRWLockCreate(&Lock);
 }
 
 static void ompt_tsan_lock_destroy(ompt_mutex_t kind, ompt_wait_id_t wait_id,
@@ -1134,7 +1163,7 @@ static void ompt_tsan_lock_destroy(ompt_mutex_t kind, ompt_wait_id_t wait_id,
   LocksMutex.lock();
   std::mutex &Lock = Locks[wait_id];
   LocksMutex.unlock();
-  TsanRWLockDestroy(&Lock, codeptr_ra);
+  TsanRWLockDestroy(&Lock);
 }
 
 /// OMPT event callbacks for handling locking.
@@ -1150,7 +1179,7 @@ static void ompt_tsan_mutex_acquired(ompt_mutex_t kind, ompt_wait_id_t wait_id,
 
   Lock.lock();
   TsanHappensAfter(&Lock);
-  TsanRWLockAcquired(&Lock, 1, codeptr_ra);
+  TsanRWLockAcquired(&Lock, 1);
 }
 
 static void ompt_tsan_mutex_released(ompt_mutex_t kind, ompt_wait_id_t wait_id,
@@ -1159,7 +1188,7 @@ static void ompt_tsan_mutex_released(ompt_mutex_t kind, ompt_wait_id_t wait_id,
   std::mutex &Lock = Locks[wait_id];
   LocksMutex.unlock();
   TsanHappensBefore(&Lock);
-  TsanRWLockReleased(&Lock, 1, codeptr_ra);
+  TsanRWLockReleased(&Lock, 1);
 
   Lock.unlock();
 }
@@ -1233,18 +1262,34 @@ static int ompt_tsan_initialize(ompt_function_lookup_t lookup, int device_num,
       (void (*)(const char *, int, const volatile void *, size_t)));
   findTsanFunction(__tsan_func_entry, (void (*)(const void *)));
   findTsanFunction(__tsan_func_exit, (void (*)(void)));
-  findTsanFunction(
+  findTsanFunctionSilent(
       AnnotateRWLockCreatePC,
       (void (*)(const char *, int, const volatile void *, const void *)));
-  findTsanFunction(
+  findTsanFunctionSilent(
       AnnotateRWLockDestroyPC,
       (void (*)(const char *, int, const volatile void *, const void *)));
-  findTsanFunction(AnnotateRWLockAcquiredPC,
-                   (void (*)(const char *, int, const volatile void *, size_t,
-                             const void *)));
-  findTsanFunction(AnnotateRWLockReleasedPC,
-                   (void (*)(const char *, int, const volatile void *, size_t,
-                             const void *)));
+  findTsanFunctionSilent(AnnotateRWLockAcquiredPC,
+                         (void (*)(const char *, int, const volatile void *,
+                                   size_t, const void *)));
+  findTsanFunctionSilent(AnnotateRWLockReleasedPC,
+                         (void (*)(const char *, int, const volatile void *,
+                                   size_t, const void *)));
+  // Use non-PC annotation functions as fallback
+  if (!AnnotateRWLockReleasedPC) {
+    hasTsanLockAnnotationPCIface = false;
+    if (archer_flags->verbose)
+      printf("[Archer] Falling back to non-PC lock annotations");
+    findTsanFunction(AnnotateRWLockCreate,
+                     (void (*)(const char *, int, const volatile void *)));
+    findTsanFunction(AnnotateRWLockDestroy,
+                     (void (*)(const char *, int, const volatile void *)));
+    findTsanFunction(
+        AnnotateRWLockAcquired,
+        (void (*)(const char *, int, const volatile void *, size_t)));
+    findTsanFunction(
+        AnnotateRWLockReleased,
+        (void (*)(const char *, int, const volatile void *, size_t)));
+  }
 
   SET_CALLBACK(thread_begin);
   SET_CALLBACK(thread_end);
