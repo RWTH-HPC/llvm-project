@@ -209,46 +209,25 @@ DECLARE_TSAN_FUNCTION(AnnotateRWLockReleased, const char *, int,
   AnnotateNewMemory(__FILE__, __LINE__, addr, size)
 
 // Locks
+#define CallPCOrNoPCHelper(f, pc, ...)                                         \
+  do {                                                                         \
+    if (hasTsanLockAnnotationPCIface)                                          \
+      f##PC(__FILE__, __LINE__, __VA_ARGS__, pc);                              \
+    else {                                                                     \
+      TsanFuncEntry(pc);                                                       \
+      f(__FILE__, __LINE__, __VA_ARGS__);                                      \
+      TsanFuncExit();                                                          \
+    }                                                                          \
+  } while (0)
+
 #define TsanRWLockCreate(mutex, pc)                                            \
-  do {                                                                         \
-    if (hasTsanLockAnnotationPCIface)                                          \
-      AnnotateRWLockCreatePC(__FILE__, __LINE__, mutex, pc);                   \
-    else {                                                                     \
-      TsanFuncEntry(pc);                                                       \
-      AnnotateRWLockCreate(__FILE__, __LINE__, mutex);                         \
-      TsanFuncExit();                                                          \
-    }                                                                          \
-  } while (0)
+  CallPCOrNoPCHelper(AnnotateRWLockCreate, pc, mutex)
 #define TsanRWLockDestroy(mutex, pc)                                           \
-  do {                                                                         \
-    if (hasTsanLockAnnotationPCIface)                                          \
-      AnnotateRWLockDestroyPC(__FILE__, __LINE__, mutex, pc);                  \
-    else {                                                                     \
-      TsanFuncEntry(pc);                                                       \
-      AnnotateRWLockDestroy(__FILE__, __LINE__, mutex);                        \
-      TsanFuncExit();                                                          \
-    }                                                                          \
-  } while (0)
+  CallPCOrNoPCHelper(AnnotateRWLockDestroy, pc, mutex)
 #define TsanRWLockAcquired(mutex, isw, pc)                                     \
-  do {                                                                         \
-    if (hasTsanLockAnnotationPCIface)                                          \
-      AnnotateRWLockAcquiredPC(__FILE__, __LINE__, mutex, isw, pc);            \
-    else {                                                                     \
-      TsanFuncEntry(pc);                                                       \
-      AnnotateRWLockAcquired(__FILE__, __LINE__, mutex, isw);                  \
-      TsanFuncExit();                                                          \
-    }                                                                          \
-  } while (0)
+  CallPCOrNoPCHelper(AnnotateRWLockAcquired, pc, mutex, isw)
 #define TsanRWLockReleased(mutex, isw, pc)                                     \
-  do {                                                                         \
-    if (hasTsanLockAnnotationPCIface)                                          \
-      AnnotateRWLockReleasedPC(__FILE__, __LINE__, mutex, isw, pc);            \
-    else {                                                                     \
-      TsanFuncEntry(pc);                                                       \
-      AnnotateRWLockReleased(__FILE__, __LINE__, mutex, isw);                  \
-      TsanFuncExit();                                                          \
-    }                                                                          \
-  } while (0)
+  CallPCOrNoPCHelper(AnnotateRWLockReleased, pc, mutex, isw)
 #endif
 
 // Function entry/exit
