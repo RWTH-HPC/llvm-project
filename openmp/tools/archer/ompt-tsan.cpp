@@ -209,33 +209,45 @@ DECLARE_TSAN_FUNCTION(AnnotateRWLockReleased, const char *, int,
   AnnotateNewMemory(__FILE__, __LINE__, addr, size)
 
 // Locks
-#define TsanRWLockCreate(mutex)                                                \
+#define TsanRWLockCreate(mutex, pc)                                            \
   do {                                                                         \
     if (hasTsanLockAnnotationPCIface)                                          \
-      AnnotateRWLockCreatePC(__FILE__, __LINE__, mutex, codeptr_ra);           \
-    else                                                                       \
+      AnnotateRWLockCreatePC(__FILE__, __LINE__, mutex, pc);                   \
+    else {                                                                     \
+      TsanFuncEntry(pc);                                                       \
       AnnotateRWLockCreate(__FILE__, __LINE__, mutex);                         \
+      TsanFuncExit();                                                          \
+    }                                                                          \
   } while (0)
-#define TsanRWLockDestroy(mutex)                                               \
+#define TsanRWLockDestroy(mutex, pc)                                           \
   do {                                                                         \
     if (hasTsanLockAnnotationPCIface)                                          \
-      AnnotateRWLockDestroyPC(__FILE__, __LINE__, mutex, codeptr_ra);          \
-    else                                                                       \
+      AnnotateRWLockDestroyPC(__FILE__, __LINE__, mutex, pc);                  \
+    else {                                                                     \
+      TsanFuncEntry(pc);                                                       \
       AnnotateRWLockDestroy(__FILE__, __LINE__, mutex);                        \
+      TsanFuncExit();                                                          \
+    }                                                                          \
   } while (0)
-#define TsanRWLockAcquired(mutex, isw)                                         \
+#define TsanRWLockAcquired(mutex, isw, pc)                                     \
   do {                                                                         \
     if (hasTsanLockAnnotationPCIface)                                          \
-      AnnotateRWLockAcquiredPC(__FILE__, __LINE__, mutex, isw, codeptr_ra);    \
-    else                                                                       \
+      AnnotateRWLockAcquiredPC(__FILE__, __LINE__, mutex, isw, pc);            \
+    else {                                                                     \
+      TsanFuncEntry(pc);                                                       \
       AnnotateRWLockAcquired(__FILE__, __LINE__, mutex, isw);                  \
+      TsanFuncExit();                                                          \
+    }                                                                          \
   } while (0)
-#define TsanRWLockReleased(mutex, isw)                                         \
+#define TsanRWLockReleased(mutex, isw, pc)                                     \
   do {                                                                         \
     if (hasTsanLockAnnotationPCIface)                                          \
-      AnnotateRWLockReleasedPC(__FILE__, __LINE__, mutex, isw, codeptr_ra);    \
-    else                                                                       \
+      AnnotateRWLockReleasedPC(__FILE__, __LINE__, mutex, isw, pc);            \
+    else {                                                                     \
+      TsanFuncEntry(pc);                                                       \
       AnnotateRWLockReleased(__FILE__, __LINE__, mutex, isw);                  \
+      TsanFuncExit();                                                          \
+    }                                                                          \
   } while (0)
 #endif
 
@@ -1155,7 +1167,7 @@ static void ompt_tsan_lock_init(ompt_mutex_t kind, unsigned int hint,
   LocksMutex.lock();
   std::mutex &Lock = Locks[wait_id];
   LocksMutex.unlock();
-  TsanRWLockCreate(&Lock);
+  TsanRWLockCreate(&Lock, codeptr_ra);
 }
 
 static void ompt_tsan_lock_destroy(ompt_mutex_t kind, ompt_wait_id_t wait_id,
@@ -1163,7 +1175,7 @@ static void ompt_tsan_lock_destroy(ompt_mutex_t kind, ompt_wait_id_t wait_id,
   LocksMutex.lock();
   std::mutex &Lock = Locks[wait_id];
   LocksMutex.unlock();
-  TsanRWLockDestroy(&Lock);
+  TsanRWLockDestroy(&Lock, codeptr_ra);
 }
 
 /// OMPT event callbacks for handling locking.
@@ -1179,7 +1191,7 @@ static void ompt_tsan_mutex_acquired(ompt_mutex_t kind, ompt_wait_id_t wait_id,
 
   Lock.lock();
   TsanHappensAfter(&Lock);
-  TsanRWLockAcquired(&Lock, 1);
+  TsanRWLockAcquired(&Lock, 1, codeptr_ra);
 }
 
 static void ompt_tsan_mutex_released(ompt_mutex_t kind, ompt_wait_id_t wait_id,
@@ -1188,7 +1200,7 @@ static void ompt_tsan_mutex_released(ompt_mutex_t kind, ompt_wait_id_t wait_id,
   std::mutex &Lock = Locks[wait_id];
   LocksMutex.unlock();
   TsanHappensBefore(&Lock);
-  TsanRWLockReleased(&Lock, 1);
+  TsanRWLockReleased(&Lock, 1, codeptr_ra);
 
   Lock.unlock();
 }
