@@ -869,6 +869,7 @@ struct CUDADeviceTy : public GenericDeviceTy {
       Stream,
       [] (void *Event) {
         DP("Fulfill event " DPxMOD "\n", DPxPTR(Event));
+        // TODO: Record event for further, to allow subsequent kernels to run
         __kmpc_fulfill_event(Event);
       },
       Event

@@ -324,6 +324,27 @@ __kmp_depnode_link_successor(kmp_int32 gtid, kmp_info_t *thread,
     if (dep->dn.task) {
       KMP_ACQUIRE_DEPNODE(gtid, dep);
       if (dep->dn.task) {
+
+        /* Device Aware Filtering */
+        if (task) {
+          kmp_taskdata_t *taskdata = KMP_TASK_TO_TASKDATA(task);
+          kmp_taskdata_t *pred_taskdata = KMP_TASK_TO_TASKDATA(dep->dn.task);
+
+          // Both the current and the predecessor are target tasks
+          if (taskdata->td_flags.target == TASK_TARGET && pred_taskdata->td_flags.target == TASK_TARGET) {
+            // Both target tasks are offloaded to the same device
+            if (taskdata->td_target_data.device_id == pred_taskdata->td_target_data.device_id) {
+              KA_TRACE(40, ("__kmp_process_deps: T#%d"
+                            "skipping same-device from %p to %p\n",
+                            gtid, pred_taskdata, taskdata));
+              KMP_RELEASE_DEPNODE(gtid, dep);
+              // Go to next predecessor without adding this one
+              continue;
+            }
+          }
+        }
+        /* End Device Aware Filtering */
+
         if (!dep->dn.successors || dep->dn.successors->node != node) {
 #if OMPX_TASKGRAPH
           if (!(__kmp_tdg_is_recording(tdg_status)) && task)
@@ -365,6 +386,27 @@ static inline kmp_int32 __kmp_depnode_link_successor(kmp_int32 gtid,
   if (sink->dn.task) {
     // synchronously add source to sink' list of successors
     KMP_ACQUIRE_DEPNODE(gtid, sink);
+
+    /* Device Aware Filtering */
+    if (task) {
+      kmp_taskdata_t *taskdata = KMP_TASK_TO_TASKDATA(task);
+      kmp_taskdata_t *pred_taskdata = KMP_TASK_TO_TASKDATA(sink->dn.task);
+
+      // Both the current and the predecessor are target tasks
+      if (taskdata->td_flags.target == TASK_TARGET && pred_taskdata->td_flags.target == TASK_TARGET) {
+        // Both target tasks are offloaded to the same device
+        if (taskdata->td_target_data.device_id == pred_taskdata->td_target_data.device_id) {
+          KA_TRACE(40, ("__kmp_process_deps: T#%d"
+                        "skipping same-device from %p to %p\n",
+                        gtid, pred_taskdata, taskdata));
+          KMP_RELEASE_DEPNODE(gtid, sink);
+          // Return 0 predecessors
+          return npredecessors;
+        }
+      }
+    }
+    /* End Device Aware Filtering */
+
     if (sink->dn.task) {
       if (!sink->dn.successors || sink->dn.successors->node != source) {
 #if OMPX_TASKGRAPH

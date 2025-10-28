@@ -1379,6 +1379,8 @@ kmp_task_t *__kmp_task_alloc(ident_t *loc_ref, kmp_int32 gtid,
       parent_task->td_taskgroup; // task inherits taskgroup from the parent task
   taskdata->td_dephash = NULL;
   taskdata->td_depnode = NULL;
+  taskdata->td_target_data.device_id = -1; // -1 default for non target tasks
+  taskdata->td_target_data.pred_event = NULL;
   if (flags->tiedness == TASK_UNTIED)
     taskdata->td_last_tied = NULL; // will be set when the task is scheduled
   else
@@ -1455,7 +1457,7 @@ kmp_task_t *__kmpc_omp_target_task_alloc(ident_t *loc_ref, kmp_int32 gtid,
   auto &input_flags = reinterpret_cast<kmp_tasking_flags_t &>(flags);
   // target task is untied defined in the specification
   input_flags.tiedness = TASK_UNTIED;
-  input_flags.target = 1;
+  input_flags.target = TASK_TARGET;
   // mark target tasks as detachable
   input_flags.detachable = TASK_DETACHABLE;
 
@@ -1464,6 +1466,9 @@ kmp_task_t *__kmpc_omp_target_task_alloc(ident_t *loc_ref, kmp_int32 gtid,
 
   kmp_task_t *task = __kmpc_omp_task_alloc(loc_ref, gtid, flags, sizeof_kmp_task_t,
                                sizeof_shareds, task_entry);
+
+  kmp_taskdata_t *taskdata = KMP_TASK_TO_TASKDATA(task);
+  taskdata->td_target_data.device_id = device_id;
 
   // enable event completion for target tasks
   __kmpc_task_allow_completion_event(NULL, gtid, task);

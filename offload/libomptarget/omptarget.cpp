@@ -1422,6 +1422,9 @@ int target(ident_t *Loc, DeviceTy &Device, void *HostPtr,
 
   PrivateArgumentManagerTy PrivateArgumentManager(Device, AsyncInfo);
 
+  // TODO: Block until predecessor cuEvent 
+  // i.e. use waitEventImpl need event ptr
+
   int NumClangLaunchArgs = KernelArgs.NumArgs;
   int Ret = OFFLOAD_SUCCESS;
   if (NumClangLaunchArgs) {
@@ -1488,6 +1491,9 @@ int target(ident_t *Loc, DeviceTy &Device, void *HostPtr,
       return OFFLOAD_FAIL;
     }
   }
+
+  // TODO: create event dependencies for successors
+  // i.e. createEventImpl returns an event
 
   Ret = Device.fulfillEvent(AsyncInfo);
   if (Ret != OFFLOAD_SUCCESS) {

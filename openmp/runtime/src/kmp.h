@@ -44,6 +44,8 @@
 #define TASK_FULL 0
 #define TASK_DETACHABLE 1
 #define TASK_UNDETACHABLE 0
+#define TASK_TARGET 1
+#define TASK_NON_TARGET 0
 
 #define KMP_CANCEL_THREADS
 #define KMP_THREAD_ATTR
@@ -2757,6 +2759,8 @@ typedef struct kmp_tasking_flags { /* Total struct must be exactly 32 bits */
 
 typedef struct kmp_target_data {
   void *async_handle; // libomptarget async handle for task completion query
+  kmp_int64 device_id;
+  void *pred_event;
 } kmp_target_data_t;
 
 struct kmp_taskdata { /* aligned during dynamic allocation       */
