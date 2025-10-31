@@ -865,11 +865,13 @@ struct CUDADeviceTy : public GenericDeviceTy {
       return Err;
 
     void *Event = __kmpc_omp_get_event(__kmpc_global_thread_num(NULL));
+    unsigned long long StreamId;
+    cuStreamGetId(Stream, &StreamId);
+    DP("OMP_EVENT: " DPxMOD ", Stream: %llu\n", DPxPTR(Event), StreamId);
     CUresult Res = cuLaunchHostFunc(
       Stream,
       [] (void *Event) {
         DP("Fulfill event " DPxMOD "\n", DPxPTR(Event));
-        // TODO: Record event for further, to allow subsequent kernels to run
         __kmpc_fulfill_event(Event);
       },
       Event
@@ -909,6 +911,7 @@ struct CUDADeviceTy : public GenericDeviceTy {
   /// Record the event.
   Error recordEventImpl(void *EventPtr,
                         AsyncInfoWrapperTy &AsyncInfoWrapper) override {
+    DP("Creating cuEvent\n");
     CUevent Event = reinterpret_cast<CUevent>(EventPtr);
 
     CUstream Stream;
@@ -928,6 +931,9 @@ struct CUDADeviceTy : public GenericDeviceTy {
     if (auto Err = getStream(AsyncInfoWrapper, Stream))
       return Err;
 
+    unsigned long long StreamId;
+    cuStreamGetId(Stream, &StreamId);
+    DP("DEVICE_EVENT: Stream %llu waits on event " DPxMOD "\n", StreamId, DPxPTR(EventPtr));
     // Do not use CU_EVENT_WAIT_DEFAULT here as it is only available from
     // specific CUDA version, and defined as 0x0. In previous version, per CUDA
     // API document, that argument has to be 0x0.

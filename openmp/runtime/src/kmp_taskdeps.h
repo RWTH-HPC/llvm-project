@@ -95,6 +95,9 @@ static inline void __kmp_dephash_free(kmp_info_t *thread, kmp_dephash_t *h) {
 extern void __kmpc_give_task(kmp_task_t *ptask, kmp_int32 start);
 
 static inline void __kmp_release_deps(kmp_int32 gtid, kmp_taskdata_t *task) {
+  if (task->dependencies_released)
+    return;
+  task->dependencies_released = true;
 
 #if OMPX_TASKGRAPH
   if (task->is_taskgraph && !(__kmp_tdg_is_recording(task->tdg->tdg_status))) {

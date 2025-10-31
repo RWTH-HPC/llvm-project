@@ -2760,7 +2760,8 @@ typedef struct kmp_tasking_flags { /* Total struct must be exactly 32 bits */
 typedef struct kmp_target_data {
   void *async_handle; // libomptarget async handle for task completion query
   kmp_int64 device_id;
-  void *pred_event;
+  void *device_event;
+  void **pred_device_event;
 } kmp_target_data_t;
 
 struct kmp_taskdata { /* aligned during dynamic allocation       */
@@ -2790,6 +2791,7 @@ struct kmp_taskdata { /* aligned during dynamic allocation       */
       *td_dephash; // Dependencies for children tasks are tracked from here
   kmp_depnode_t
       *td_depnode; // Pointer to graph node if this task has dependencies
+  bool dependencies_released;
   kmp_task_team_t *td_task_team;
   size_t td_size_alloc; // Size of task structure, including shareds etc.
 #if defined(KMP_GOMP_COMPAT)
@@ -4356,7 +4358,10 @@ KMP_EXPORT int __kmp_get_teams_thread_limit(void);
 
 /* Interface target task integration */
 KMP_EXPORT kmp_event_t *__kmpc_omp_get_event(kmp_int32 gtid);
+KMP_EXPORT void **__kmpc_omp_get_device_event_ptr(kmp_int32 gtid);
+KMP_EXPORT void **__kmpc_omp_get_pred_device_event_ptr(kmp_int32 gtid);
 KMP_EXPORT bool __kmpc_omp_has_task_team(kmp_int32 gtid);
+KMP_EXPORT void __kmpc_release_deps(kmp_int32 gtid);
 
 /* Lock interface routines (fast versions with gtid passed in) */
 KMP_EXPORT void __kmpc_init_lock(ident_t *loc, kmp_int32 gtid,

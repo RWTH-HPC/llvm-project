@@ -22,10 +22,11 @@
 #endif
 
 #if ENABLE_LIBOMPTARGET
-static void (*tgt_target_nowait_query)(void **);
+static void (*tgt_target_assign_device_event)(void **, kmp_int64);
 
 void __kmp_init_target_task() {
-  *(void **)(&tgt_target_nowait_query) = KMP_DLSYM("__tgt_target_nowait_query");
+    tgt_target_assign_device_event =
+        (void (*)(void **, kmp_int64)) KMP_DLSYM("__tgt_target_assign_device_event");
 }
 #endif
 
@@ -1379,8 +1380,10 @@ kmp_task_t *__kmp_task_alloc(ident_t *loc_ref, kmp_int32 gtid,
       parent_task->td_taskgroup; // task inherits taskgroup from the parent task
   taskdata->td_dephash = NULL;
   taskdata->td_depnode = NULL;
+  taskdata->dependencies_released = false;
   taskdata->td_target_data.device_id = -1; // -1 default for non target tasks
-  taskdata->td_target_data.pred_event = NULL;
+  taskdata->td_target_data.device_event = NULL;
+  taskdata->td_target_data.pred_device_event = NULL;
   if (flags->tiedness == TASK_UNTIED)
     taskdata->td_last_tied = NULL; // will be set when the task is scheduled
   else
@@ -1469,6 +1472,7 @@ kmp_task_t *__kmpc_omp_target_task_alloc(ident_t *loc_ref, kmp_int32 gtid,
 
   kmp_taskdata_t *taskdata = KMP_TASK_TO_TASKDATA(task);
   taskdata->td_target_data.device_id = device_id;
+  tgt_target_assign_device_event(&taskdata->td_target_data.device_event, taskdata->td_target_data.device_id);
 
   // enable event completion for target tasks
   __kmpc_task_allow_completion_event(NULL, gtid, task);
@@ -4336,6 +4340,7 @@ void __kmp_fulfill_event(kmp_event_t *event) {
   if (event->type == KMP_EVENT_ALLOW_COMPLETION) {
     kmp_task_t *ptask = event->ed.task;
     kmp_taskdata_t *taskdata = KMP_TASK_TO_TASKDATA(ptask);
+    KA_TRACE(1, ("DEVICE_EVENT: Fulfilling kernel with device event %p\n", taskdata->td_target_data.device_event));
     bool detached = false;
     int gtid = __kmp_get_gtid();
 
@@ -5150,7 +5155,7 @@ void __kmpc_taskloop_5(ident_t *loc, int gtid, kmp_task_t *task, int if_val,
   KA_TRACE(20, ("__kmpc_taskloop_5(exit): T#%d\n", gtid));
 }
 
-/*
+/*!
 @ingroup TASKING
 @param gtid Global Thread ID of current thread
 @return Returns a pointer to the thread's current task completion event. If no task
@@ -5167,6 +5172,32 @@ kmp_event_t *__kmpc_omp_get_event(kmp_int32 gtid) {
     return NULL;
 
   return &taskdata->td_allow_completion_event;
+}
+
+void **__kmpc_omp_get_device_event_ptr(kmp_int32 gtid) {
+  if (gtid == KMP_GTID_DNE)
+    return NULL;
+
+  kmp_info_t *thread = __kmp_thread_from_gtid(gtid);
+  kmp_taskdata_t *taskdata = thread->th.th_current_task;
+
+  if (!taskdata)
+    return NULL;
+
+  return &taskdata->td_target_data.device_event;
+}
+
+void **__kmpc_omp_get_pred_device_event_ptr(kmp_int32 gtid) {
+  if (gtid == KMP_GTID_DNE)
+    return NULL;
+
+  kmp_info_t *thread = __kmp_thread_from_gtid(gtid);
+  kmp_taskdata_t *taskdata = thread->th.th_current_task;
+
+  if (!taskdata)
+    return NULL;
+
+  return taskdata->td_target_data.pred_device_event;
 }
 
 /*!

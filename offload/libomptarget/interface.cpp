@@ -511,3 +511,13 @@ EXTERN int __tgt_print_device_info(int64_t DeviceId) {
 
   return DeviceOrErr->printDeviceInfo();
 }
+
+EXTERN void __tgt_target_assign_device_event(void **device_event_ptr, int64_t DeviceId) {
+  assert(PM && "Runtime not initialized");
+  auto DeviceOrErr = PM->getDevice(DeviceId);
+  if(!DeviceOrErr)
+    FATAL_MESSAGE(DeviceId, "%s", toString(DeviceOrErr.takeError()).c_str());
+
+  DeviceOrErr->createEvent(device_event_ptr);
+  DP("DEVICE_EVENT: Created device event " DPxMOD "\n", DPxPTR(*device_event_ptr));
+}

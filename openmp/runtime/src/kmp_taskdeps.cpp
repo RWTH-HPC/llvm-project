@@ -326,23 +326,23 @@ __kmp_depnode_link_successor(kmp_int32 gtid, kmp_info_t *thread,
       if (dep->dn.task) {
 
         /* Device Aware Filtering */
-        if (task) {
-          kmp_taskdata_t *taskdata = KMP_TASK_TO_TASKDATA(task);
-          kmp_taskdata_t *pred_taskdata = KMP_TASK_TO_TASKDATA(dep->dn.task);
+        //if (task) {
+        //  kmp_taskdata_t *taskdata = KMP_TASK_TO_TASKDATA(task);
+        //  kmp_taskdata_t *pred_taskdata = KMP_TASK_TO_TASKDATA(dep->dn.task);
 
-          // Both the current and the predecessor are target tasks
-          if (taskdata->td_flags.target == TASK_TARGET && pred_taskdata->td_flags.target == TASK_TARGET) {
-            // Both target tasks are offloaded to the same device
-            if (taskdata->td_target_data.device_id == pred_taskdata->td_target_data.device_id) {
-              KA_TRACE(40, ("__kmp_process_deps: T#%d"
-                            "skipping same-device from %p to %p\n",
-                            gtid, pred_taskdata, taskdata));
-              KMP_RELEASE_DEPNODE(gtid, dep);
-              // Go to next predecessor without adding this one
-              continue;
-            }
-          }
-        }
+        //  // Both the current and the predecessor are target tasks
+        //  if (taskdata->td_flags.target == TASK_TARGET && pred_taskdata->td_flags.target == TASK_TARGET) {
+        //    // Both target tasks are offloaded to the same device
+        //    if (taskdata->td_target_data.device_id == pred_taskdata->td_target_data.device_id) {
+        //      KA_TRACE(40, ("__kmp_process_deps: T#%d"
+        //                    "skipping same-device from %p to %p\n",
+        //                    gtid, pred_taskdata, taskdata));
+        //      KMP_RELEASE_DEPNODE(gtid, dep);
+        //      // Go to next predecessor without adding this one
+        //      continue;
+        //    }
+        //  }
+        //}
         /* End Device Aware Filtering */
 
         if (!dep->dn.successors || dep->dn.successors->node != node) {
@@ -387,28 +387,31 @@ static inline kmp_int32 __kmp_depnode_link_successor(kmp_int32 gtid,
     // synchronously add source to sink' list of successors
     KMP_ACQUIRE_DEPNODE(gtid, sink);
 
-    /* Device Aware Filtering */
-    if (task) {
-      kmp_taskdata_t *taskdata = KMP_TASK_TO_TASKDATA(task);
-      kmp_taskdata_t *pred_taskdata = KMP_TASK_TO_TASKDATA(sink->dn.task);
-
-      // Both the current and the predecessor are target tasks
-      if (taskdata->td_flags.target == TASK_TARGET && pred_taskdata->td_flags.target == TASK_TARGET) {
-        // Both target tasks are offloaded to the same device
-        if (taskdata->td_target_data.device_id == pred_taskdata->td_target_data.device_id) {
-          KA_TRACE(40, ("__kmp_process_deps: T#%d"
-                        "skipping same-device from %p to %p\n",
-                        gtid, pred_taskdata, taskdata));
-          KMP_RELEASE_DEPNODE(gtid, sink);
-          // Return 0 predecessors
-          return npredecessors;
-        }
-      }
-    }
-    /* End Device Aware Filtering */
-
     if (sink->dn.task) {
       if (!sink->dn.successors || sink->dn.successors->node != source) {
+        /* Device Aware Filtering */
+        if (task) {
+          kmp_taskdata_t *taskdata = KMP_TASK_TO_TASKDATA(task);
+          kmp_taskdata_t *pred_taskdata = KMP_TASK_TO_TASKDATA(sink->dn.task);
+
+          // Both the current and the predecessor are target tasks
+          if (taskdata->td_flags.target == TASK_TARGET && pred_taskdata->td_flags.target == TASK_TARGET) {
+            // Both target tasks are offloaded to the same device
+            if (taskdata->td_target_data.device_id == pred_taskdata->td_target_data.device_id) {
+              // Set the predecessor device event (i.e. CUevent) to the device event of the predecessor
+              // Inside libomptarget we will be able to link these tasks together
+              taskdata->td_target_data.pred_device_event = &pred_taskdata->td_target_data.device_event;
+              KA_TRACE(1, ("__kmp_process_deps: T#%d"
+                            "adding device aware dependency from %p to %p\n",
+                            gtid, pred_taskdata, taskdata));
+
+              // only add a device aware dependency
+              //KMP_RELEASE_DEPNODE(gtid, sink);
+              //return npredecessors;
+            }
+          }
+        }
+        /* End Device Aware Filtering */
 #if OMPX_TASKGRAPH
         if (!(__kmp_tdg_is_recording(tdg_status)) && task)
 #endif
@@ -1107,4 +1110,18 @@ void __kmpc_omp_taskwait_deps_51(ident_t *loc_ref, kmp_int32 gtid,
   KA_TRACE(10, ("__kmpc_omp_taskwait_deps(exit): T#%d finished waiting : loc=%p\
                 \n",
                 gtid, loc_ref));
+}
+
+
+void __kmpc_release_deps(kmp_int32 gtid) {
+  if (gtid == KMP_GTID_DNE)
+    return;
+
+  kmp_info_t *thread = __kmp_thread_from_gtid(gtid);
+  kmp_taskdata_t *taskdata = thread->th.th_current_task;
+
+  if (!taskdata)
+    return;
+
+  __kmp_release_deps(gtid, taskdata);
 }

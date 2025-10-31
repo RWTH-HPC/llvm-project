@@ -35,6 +35,7 @@
 
 #include <cassert>
 #include <cstdint>
+#include <thread>
 #include <vector>
 
 using llvm::SmallVector;
@@ -1422,11 +1423,35 @@ int target(ident_t *Loc, DeviceTy &Device, void *HostPtr,
 
   PrivateArgumentManagerTy PrivateArgumentManager(Device, AsyncInfo);
 
-  // TODO: Block until predecessor cuEvent 
-  // i.e. use waitEventImpl need event ptr
+  int32_t gtid = __kmpc_global_thread_num(NULL);
+  void **device_event_ptr = __kmpc_omp_get_device_event_ptr(gtid);
+  void **pred_device_event_ptr = __kmpc_omp_get_pred_device_event_ptr(gtid);
 
   int NumClangLaunchArgs = KernelArgs.NumArgs;
   int Ret = OFFLOAD_SUCCESS;
+
+
+  // if pred_device_event_ptr is NULL, this kernel does not have a predecessor
+  if (pred_device_event_ptr) {
+    DP("DEVICE_EVENT: Kernel with device event " DPxMOD " has a predecessor\n", DPxPTR(*device_event_ptr));
+    // pred_device_event_ptr points to device_event of predecessor
+    // If the value pred_device_event_ptr is NULL, that means the predecessor
+    // did not yet have an event created
+    if (!(*pred_device_event_ptr)) {
+      REPORT("DEVICE_EVENT: Kernel with device event " DPxMOD " predecessor device event was not created, yet. This shouldn't happen!\n", DPxPTR(*device_event_ptr));
+      return OFFLOAD_FAIL;
+    }
+    // Here predecessor has created an event, we can tell the device to wait for it
+    DP("DEVICE_EVENT: Kernel with device event " DPxMOD " waits on predecessor with device event " DPxMOD "\n", DPxPTR(*device_event_ptr), DPxPTR(*pred_device_event_ptr));
+    Ret = Device.waitEvent(*pred_device_event_ptr, AsyncInfo);
+    if (Ret != OFFLOAD_SUCCESS) {
+      REPORT("Failed to wait for predecessor device event.\n");
+      return OFFLOAD_FAIL;
+    }
+  } else {
+    DP("DEVICE_EVENT: Kernel with device event " DPxMOD " has no predecessor\n", DPxPTR(*device_event_ptr));
+  }
+
   if (NumClangLaunchArgs) {
     // Process data, such as data mapping, before launching the kernel
     Ret = processDataBefore(Loc, DeviceId, HostPtr, NumClangLaunchArgs,
@@ -1492,8 +1517,18 @@ int target(ident_t *Loc, DeviceTy &Device, void *HostPtr,
     }
   }
 
-  // TODO: create event dependencies for successors
-  // i.e. createEventImpl returns an event
+  
+
+  // The device event is recorded -> signals finish when the stream in AsyncInfo is finished
+  DP("DEVICE_EVENT: Recording kernel with device event " DPxMOD "\n", DPxPTR(*device_event_ptr));
+  Ret = Device.recordEvent(*device_event_ptr, AsyncInfo);
+  if (Ret != OFFLOAD_SUCCESS) {
+    REPORT("Failed to record device event.\n");
+    return OFFLOAD_FAIL;
+  } 
+
+  // Since the kernel is now being recorded, we can release the openmp depenendies and handle successor tasks via cuEvents
+  __kmpc_release_deps(gtid);
 
   Ret = Device.fulfillEvent(AsyncInfo);
   if (Ret != OFFLOAD_SUCCESS) {
