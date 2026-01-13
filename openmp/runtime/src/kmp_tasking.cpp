@@ -11,6 +11,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "kmp.h"
+#include "kmp_debug.h"
 #include "kmp_i18n.h"
 #include "kmp_itt.h"
 #include "kmp_stats.h"
@@ -1661,6 +1662,8 @@ __kmp_invoke_task(kmp_int32 gtid, kmp_task_t *task,
       } else
 #endif /* KMP_GOMP_COMPAT */
       {
+        KA_TRACE(1, ("__kmp_invoke_task: T#%d"
+                     " invoking task %p\n", gtid, taskdata));
         (*(task->routine))(gtid, task);
       }
     }
@@ -4340,7 +4343,7 @@ void __kmp_fulfill_event(kmp_event_t *event) {
   if (event->type == KMP_EVENT_ALLOW_COMPLETION) {
     kmp_task_t *ptask = event->ed.task;
     kmp_taskdata_t *taskdata = KMP_TASK_TO_TASKDATA(ptask);
-    KA_TRACE(1, ("DEVICE_EVENT: Fulfilling kernel with device event %p\n", taskdata->td_target_data.device_event));
+    KA_TRACE(1, ("__kmp_fulfill_event: Fulfilling detached task %p\n", taskdata));
     bool detached = false;
     int gtid = __kmp_get_gtid();
 
@@ -5184,6 +5187,10 @@ void **__kmpc_omp_get_device_event_ptr(kmp_int32 gtid) {
   if (!taskdata)
     return NULL;
 
+  //KA_TRACE(1, ("__kmpc_omp_get_device_event_ptr: T#%d"
+  //         " getting device event %p for task %p\n", gtid, taskdata->td_target_data.device_event, taskdata));
+
+
   return &taskdata->td_target_data.device_event;
 }
 
@@ -5196,6 +5203,9 @@ void **__kmpc_omp_get_pred_device_event_ptr(kmp_int32 gtid) {
 
   if (!taskdata)
     return NULL;
+
+  //KA_TRACE(1, ("__kmpc_omp_get_pred_device_event_ptr: T#%d"
+  //         " getting pred device event %p for task %p\n", gtid, taskdata->td_target_data.pred_device_event, taskdata));
 
   return taskdata->td_target_data.pred_device_event;
 }

@@ -11,6 +11,7 @@
 //===----------------------------------------------------------------------===//
 
 #include <cassert>
+#include <chrono>
 #include <cstddef>
 #include <cuda.h>
 #include <string>
@@ -872,7 +873,11 @@ struct CUDADeviceTy : public GenericDeviceTy {
       Stream,
       [] (void *Event) {
         DP("Fulfill event " DPxMOD "\n", DPxPTR(Event));
+        //auto start = std::chrono::steady_clock::now();
         __kmpc_fulfill_event(Event);
+        //auto end = std::chrono::steady_clock::now();
+        //auto duration = std::chrono::duration_cast<std::chrono::duration<double, std::micro>>(end - start).count();
+        //DP("Fulfilled event " DPxMOD " in %f µs\n", DPxPTR(Event), duration);
       },
       Event
     );

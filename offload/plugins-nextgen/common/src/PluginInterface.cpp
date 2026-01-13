@@ -471,6 +471,9 @@ Error GenericKernelTy::init(GenericDeviceTy &GenericDevice,
                      int32_t(GenericDevice.getDefaultNumThreads()))
           : GenericDevice.getDefaultNumThreads();
 
+  DP("MAX_SIZE: MaxNumThreads %d\n", MaxNumThreads);
+  DP("MAX_SIZE: PreferredNumThreads %d\n", PreferredNumThreads);
+
   return initImpl(GenericDevice, Image);
 }
 
@@ -811,6 +814,7 @@ Error GenericDeviceTy::init(GenericPluginTy &Plugin) {
   if (OMP_TeamsThreadLimit > 0)
     GridValues.GV_Max_WG_Size =
         std::min(GridValues.GV_Max_WG_Size, uint32_t(OMP_TeamsThreadLimit));
+  DP("MAX_SIZE: %d\n", GridValues.GV_Max_WG_Size);
 
   // Enable the memory manager if required.
   auto [ThresholdMM, EnableMM] = MemoryManagerTy::getSizeThresholdFromEnv();

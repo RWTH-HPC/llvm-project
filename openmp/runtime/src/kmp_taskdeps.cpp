@@ -402,7 +402,7 @@ static inline kmp_int32 __kmp_depnode_link_successor(kmp_int32 gtid,
               // Inside libomptarget we will be able to link these tasks together
               taskdata->td_target_data.pred_device_event = &pred_taskdata->td_target_data.device_event;
               KA_TRACE(1, ("__kmp_process_deps: T#%d"
-                            "adding device aware dependency from %p to %p\n",
+                            " adding device aware dependency from %p to %p\n",
                             gtid, pred_taskdata, taskdata));
 
               // only add a device aware dependency
@@ -1124,4 +1124,20 @@ void __kmpc_release_deps(kmp_int32 gtid) {
     return;
 
   __kmp_release_deps(gtid, taskdata);
+}
+
+void __kmpc_release_device_deps(kmp_int32 gtid) {
+  if (gtid == KMP_GTID_DNE)
+    return;
+
+  kmp_info_t *thread = __kmp_thread_from_gtid(gtid);
+  kmp_taskdata_t *taskdata = thread->th.th_current_task;
+
+  if (!taskdata)
+    return;
+
+  KA_TRACE(1, ("__kmpc_release_device_deps: T#%d releasing device deps for %p\n",
+                gtid, taskdata));
+
+  __kmp_release_device_deps(gtid, taskdata);
 }

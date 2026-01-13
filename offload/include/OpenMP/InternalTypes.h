@@ -77,6 +77,7 @@ void **__kmpc_omp_get_device_event_ptr(int32_t gtid) __attribute__((weak));
 void **__kmpc_omp_get_pred_device_event_ptr(int32_t gtid) __attribute__((weak));
 void __kmpc_fulfill_event(void *event) __attribute__((weak));
 void __kmpc_release_deps(int32_t gtid) __attribute__((weak));
+void __kmpc_release_device_deps(int32_t gtid) __attribute__((weak));
 
 /**
  * The argument set that is passed from asynchronous memory copy to block

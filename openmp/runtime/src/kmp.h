@@ -2563,6 +2563,7 @@ typedef struct kmp_depend_info {
 struct kmp_depnode_list {
   kmp_depnode_t *node;
   kmp_depnode_list_t *next;
+  bool is_device_satisfied = false;
 };
 
 // Max number of mutexinoutset dependencies per node
@@ -4362,6 +4363,7 @@ KMP_EXPORT void **__kmpc_omp_get_device_event_ptr(kmp_int32 gtid);
 KMP_EXPORT void **__kmpc_omp_get_pred_device_event_ptr(kmp_int32 gtid);
 KMP_EXPORT bool __kmpc_omp_has_task_team(kmp_int32 gtid);
 KMP_EXPORT void __kmpc_release_deps(kmp_int32 gtid);
+KMP_EXPORT void __kmpc_release_device_deps(kmp_int32 gtid);
 
 /* Lock interface routines (fast versions with gtid passed in) */
 KMP_EXPORT void __kmpc_init_lock(ident_t *loc, kmp_int32 gtid,

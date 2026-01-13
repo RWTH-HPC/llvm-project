@@ -14,6 +14,7 @@
 #define KMP_TASKDEPS_H
 
 #include "kmp.h"
+#include "kmp_debug.h"
 
 #define KMP_ACQUIRE_DEPNODE(gtid, n) __kmp_acquire_lock(&(n)->dn.lock, (gtid))
 #define KMP_RELEASE_DEPNODE(gtid, n) __kmp_release_lock(&(n)->dn.lock, (gtid))
@@ -95,10 +96,6 @@ static inline void __kmp_dephash_free(kmp_info_t *thread, kmp_dephash_t *h) {
 extern void __kmpc_give_task(kmp_task_t *ptask, kmp_int32 start);
 
 static inline void __kmp_release_deps(kmp_int32 gtid, kmp_taskdata_t *task) {
-  if (task->dependencies_released)
-    return;
-  task->dependencies_released = true;
-
 #if OMPX_TASKGRAPH
   if (task->is_taskgraph && !(__kmp_tdg_is_recording(task->tdg->tdg_status))) {
     kmp_node_info_t *TaskInfo = &(task->tdg->record_map[task->td_tdg_task_id]);
@@ -158,39 +155,42 @@ static inline void __kmp_release_deps(kmp_int32 gtid, kmp_taskdata_t *task) {
 #if USE_ITT_BUILD && USE_ITT_NOTIFY
     __itt_sync_releasing(successor);
 #endif
-    kmp_int32 npredecessors = KMP_ATOMIC_DEC(&successor->dn.npredecessors) - 1;
+    // This is to check if the predecessor was previously decremented to avoid double decrement
+    if (!p->is_device_satisfied) {
+      kmp_int32 npredecessors = KMP_ATOMIC_DEC(&successor->dn.npredecessors) - 1;
 
-    // successor task can be NULL for wait_depends or because deps are still
-    // being processed
-    if (npredecessors == 0) {
-#if USE_ITT_BUILD && USE_ITT_NOTIFY
-      __itt_sync_acquired(successor);
+      // successor task can be NULL for wait_depends or because deps are still
+      // being processed
+      if (npredecessors == 0) {
+#if   USE_ITT_BUILD && USE_ITT_NOTIFY
+        __itt_sync_acquired(successor);
 #endif
-      KMP_MB();
-      if (successor->dn.task) {
-        KA_TRACE(20, ("__kmp_release_deps: T#%d successor %p of %p scheduled "
-                      "for execution.\n",
-                      gtid, successor->dn.task, task));
-        // If a regular task depending on a hidden helper task, when the
-        // hidden helper task is done, the regular task should be executed by
-        // its encountering team.
-        if (KMP_HIDDEN_HELPER_THREAD(gtid)) {
-          // Hidden helper thread can only execute hidden helper tasks
-          KMP_ASSERT(task->td_flags.hidden_helper);
-          next_taskdata = KMP_TASK_TO_TASKDATA(successor->dn.task);
-          // If the dependent task is a regular task, we need to push to its
-          // encountering thread's queue; otherwise, it can be pushed to its own
-          // queue.
-          if (!next_taskdata->td_flags.hidden_helper) {
-            kmp_int32 encountering_gtid =
-                next_taskdata->td_alloc_thread->th.th_info.ds.ds_gtid;
-            kmp_int32 encountering_tid = __kmp_tid_from_gtid(encountering_gtid);
-            __kmpc_give_task(successor->dn.task, encountering_tid);
+        KMP_MB();
+        if (successor->dn.task) {
+          KA_TRACE(20, ("__kmp_release_deps: T#%d successor %p of %p scheduled "
+                        "for execution.\n",
+                        gtid, successor->dn.task, task));
+          // If a regular task depending on a hidden helper task, when the
+          // hidden helper task is done, the regular task should be executed by
+          // its encountering team.
+          if (KMP_HIDDEN_HELPER_THREAD(gtid)) {
+            // Hidden helper thread can only execute hidden helper tasks
+            KMP_ASSERT(task->td_flags.hidden_helper);
+            next_taskdata = KMP_TASK_TO_TASKDATA(successor->dn.task);
+            // If the dependent task is a regular task, we need to push to its
+            // encountering thread's queue; otherwise, it can be pushed to its own
+            // queue.
+            if (!next_taskdata->td_flags.hidden_helper) {
+              kmp_int32 encountering_gtid =
+                  next_taskdata->td_alloc_thread->th.th_info.ds.ds_gtid;
+              kmp_int32 encountering_tid = __kmp_tid_from_gtid(encountering_gtid);
+              __kmpc_give_task(successor->dn.task, encountering_tid);
+            } else {
+              __kmp_omp_task(gtid, successor->dn.task, false);
+            }
           } else {
             __kmp_omp_task(gtid, successor->dn.task, false);
           }
-        } else {
-          __kmp_omp_task(gtid, successor->dn.task, false);
         }
       }
     }
@@ -210,6 +210,50 @@ static inline void __kmp_release_deps(kmp_int32 gtid, kmp_taskdata_t *task) {
       20,
       ("__kmp_release_deps: T#%d all successors of %p notified of completion\n",
        gtid, task));
+}
+
+static inline void __kmp_release_device_deps(kmp_int32 gtid, kmp_taskdata_t *task) {
+  kmp_depnode_t *node = task->td_depnode;
+
+  if (!node)
+    return;
+
+  KA_TRACE(20, ("__kmp_release_device_deps: T#%d early notifying same-device successors of task %p.\n",
+                gtid, task));
+
+  kmp_info_t *thread = __kmp_threads[gtid];
+  
+  KMP_ACQUIRE_DEPNODE(gtid, node);
+
+  kmp_depnode_list_t *p = node->dn.successors;
+  while (p) {
+    kmp_depnode_t *successor = p->node;
+    kmp_taskdata_t *succ_taskdata = successor->dn.task ? KMP_TASK_TO_TASKDATA(successor->dn.task) : NULL;
+
+    // Check if successor is a target task on the same device
+    if (succ_taskdata && 
+        task->td_flags.target == TASK_TARGET && 
+        succ_taskdata->td_flags.target == TASK_TARGET &&
+        task->td_target_data.device_id == succ_taskdata->td_target_data.device_id) {
+
+      // We decrement the counter now because the device-side 
+      // ordering is guaranteed by the recorded event.
+      kmp_int32 npredecessors = KMP_ATOMIC_DEC(&successor->dn.npredecessors) - 1;
+
+      if (npredecessors == 0) {
+        KA_TRACE(20, ("__kmp_release_device_deps: T#%d successor %p (same-device) scheduled early.\n",
+                      gtid, succ_taskdata));
+        
+        // Dispatch successor to the hardware queue/plugin
+        __kmp_omp_task(gtid, successor->dn.task, false);
+      }
+
+      p->is_device_satisfied = true; // Requires addition to kmp_depnode_list_t
+    }
+    p = p->next;
+  }
+
+  KMP_RELEASE_DEPNODE(gtid, node);
 }
 
 #endif // KMP_TASKDEPS_H
