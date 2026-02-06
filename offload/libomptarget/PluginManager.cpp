@@ -19,6 +19,7 @@
 #include "llvm/Support/Error.h"
 #include "llvm/Support/ErrorHandling.h"
 #include <memory>
+#include <mutex>
 
 using namespace llvm;
 using namespace llvm::sys;
@@ -29,12 +30,46 @@ PluginManager *PM = nullptr;
 #define PLUGIN_TARGET(Name) extern "C" GenericPluginTy *createPlugin_##Name();
 #include "Shared/Targets.def"
 
+//void PluginManager::completionThreadRoutine() {
+//  while (Running) {
+//    CompletionRequest Req;
+//    {
+//      std::unique_lock<std::mutex> Lock(QueueMtx);
+//      QueueCV.wait(Lock, [this] {
+//        return !CompletionQueue.empty() || !Running;
+//      });
+//      if (!Running && CompletionQueue.empty()) 
+//        break;
+//
+//      Req = CompletionQueue.front();
+//      CompletionQueue.pop();
+//    }
+//    DP("CompletionThread: Synching Event\n");
+//    DP("CompletionThread: " DPxMOD "\n", DPxPTR(Req.AsyncInfoPtr));
+//    Req.DevicePtr->syncEvent(Req.DeviceEvent);
+//    //Req.DevicePtr->queryAsync(*Req.AsyncInfoPtr);
+//    DP("CompletionThread: Synced " DPxMOD "\n", DPxPTR(Req.AsyncInfoPtr));
+//    __kmpc_fulfill_event(Req.OMPEvent);
+//  }
+//}
+//
+//void PluginManager::enqueueCompletion(CompletionRequest &Req) {
+//    {
+//        std::lock_guard<std::mutex> Lock(QueueMtx);
+//        CompletionQueue.push(Req);
+//    }
+//    QueueCV.notify_one();
+//}
+
 void PluginManager::init() {
   TIMESCOPE();
   if (OffloadPolicy::isOffloadDisabled()) {
     DP("Offload is disabled. Skipping plugin initialization\n");
     return;
   }
+
+  //DP("Initializing completion thread\n");
+  //CompletionThread = std::thread(&PluginManager::completionThreadRoutine, this);
 
   DP("Loading RTLs...\n");
 
@@ -65,6 +100,12 @@ void PluginManager::deinit() {
   }
 
   DP("RTLs unloaded!\n");
+
+  //DP("Stopping completion thread\n");
+  //Running = false;
+  //QueueCV.notify_all();
+  //if (CompletionThread.joinable())
+  //  CompletionThread.join();
 }
 
 bool PluginManager::initializePlugin(GenericPluginTy &Plugin) {

@@ -21,6 +21,7 @@
 #include "Shared/Requirements.h"
 
 #include "device.h"
+#include "omptarget.h"
 
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/SmallVector.h"
@@ -29,16 +30,31 @@
 #include "llvm/Support/DynamicLibrary.h"
 #include "llvm/Support/Error.h"
 
+#include <condition_variable>
 #include <cstdint>
 #include <list>
 #include <memory>
 #include <mutex>
 #include <string>
+#include <queue>
+#include <thread>
 
 using GenericPluginTy = llvm::omp::target::plugin::GenericPluginTy;
 
+//struct CompletionRequest {
+//  void *DeviceEvent;
+//  void *OMPEvent;
+//  DeviceTy *DevicePtr;
+//  AsyncInfoTy *AsyncInfoPtr;
+//};
+
 /// Struct for the data required to handle plugins
 struct PluginManager {
+  //std::queue<CompletionRequest> CompletionQueue;
+  //std::mutex QueueMtx;
+  //std::condition_variable QueueCV;
+  //std::thread CompletionThread;
+  //bool Running = true;
   /// Type of the devices container. We hand out DeviceTy& to queries which are
   /// stable addresses regardless if the container changes.
   using DeviceContainerTy = llvm::SmallVector<std::unique_ptr<DeviceTy>>;
@@ -47,6 +63,9 @@ struct PluginManager {
   using ExclusiveDevicesAccessorTy = Accessor<DeviceContainerTy>;
 
   PluginManager() {}
+
+  //void completionThreadRoutine();
+  //void enqueueCompletion(CompletionRequest &Req);
 
   void init();
 

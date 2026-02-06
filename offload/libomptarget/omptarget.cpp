@@ -63,8 +63,8 @@ int AsyncInfoTy::synchronize() {
 
   // Run any pending post-processing function registered on this async object.
   if (Result == OFFLOAD_SUCCESS && isQueueEmpty()) {
-    DP("DEBUG: Run Post Pocessing\n");
-    Result = runPostProcessing();
+    //DP("DEBUG: Run Post Pocessing\n");
+    //Result = runPostProcessing();
   } else {
     DP("DEBUG: Dont't run Post Pocessing\n");
   }
@@ -82,6 +82,7 @@ bool AsyncInfoTy::isDone() const { return isQueueEmpty(); }
 int32_t AsyncInfoTy::runPostProcessing() {
   size_t Size = PostProcessingFunctions.size();
   for (size_t I = 0; I < Size; ++I) {
+    DP("RUNPOSTPROCESSING: %lu\n", I);
     const int Result = PostProcessingFunctions[I]();
     if (Result != OFFLOAD_SUCCESS)
       return Result;
@@ -1424,6 +1425,7 @@ int target(ident_t *Loc, DeviceTy &Device, void *HostPtr,
   PrivateArgumentManagerTy PrivateArgumentManager(Device, AsyncInfo);
 
   int32_t gtid = __kmpc_global_thread_num(NULL);
+  void *omp_event = __kmpc_omp_get_event(gtid);
   void **device_event_ptr = __kmpc_omp_get_device_event_ptr(gtid);
   void **pred_device_event_ptr = __kmpc_omp_get_pred_device_event_ptr(gtid);
 
@@ -1529,6 +1531,14 @@ int target(ident_t *Loc, DeviceTy &Device, void *HostPtr,
 
   // Since the kernel is now being recorded, we can release the openmp depenendies and handle successor tasks via cuEvents
   __kmpc_release_device_deps(gtid);
+
+  //CompletionRequest Req = { 
+  //  .DeviceEvent = *device_event_ptr, 
+  //  .OMPEvent = omp_event,
+  //  .DevicePtr = &Device,
+  //  .AsyncInfoPtr = &AsyncInfo
+  //};
+  //PM->enqueueCompletion(Req);
 
   Ret = Device.fulfillEvent(AsyncInfo);
   if (Ret != OFFLOAD_SUCCESS) {

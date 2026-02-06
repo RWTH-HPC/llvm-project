@@ -527,8 +527,12 @@ struct CUDADeviceTy : public GenericDeviceTy {
     Stream = AsyncInfoWrapper.getQueueAs<CUstream>();
     if (!Stream) {
       // There was no stream; get an idle one.
+      //printf("Getting resource\n");
+      //fflush(stdout);
       if (auto Err = CUDAStreamManager.getResource(Stream))
         return Err;
+      //printf("Got resource\n");
+      //fflush(stdout);
 
       // Modify the async info's stream.
       AsyncInfoWrapper.setQueueAs<CUstream>(Stream);
@@ -648,12 +652,16 @@ struct CUDADeviceTy : public GenericDeviceTy {
     CUresult Res;
     Res = cuStreamSynchronize(Stream);
 
+    unsigned long long StreamId;
+    cuStreamGetId(Stream, &StreamId);
+    DP("SYNCHRONIZE: Stream: %llu\n", StreamId);
+
     // Once the stream is synchronized, return it to stream pool and reset
     // AsyncInfo. This is to make sure the synchronization only works for its
     // own tasks.
     AsyncInfo.Queue = nullptr;
-    if (auto Err = CUDAStreamManager.returnResource(Stream))
-      return Err;
+    //if (auto Err = CUDAStreamManager.returnResource(Stream))
+    //  return Err;
 
     return Plugin::check(Res, "error in cuStreamSynchronize: %s");
   }
@@ -785,6 +793,8 @@ struct CUDADeviceTy : public GenericDeviceTy {
     CUstream Stream = reinterpret_cast<CUstream>(AsyncInfo.Queue);
     CUresult Res = cuStreamQuery(Stream);
 
+    DP("queryAsync\n");
+
     // Not ready streams must be considered as successful operations.
     if (Res == CUDA_ERROR_NOT_READY)
       return Plugin::success();
@@ -792,9 +802,11 @@ struct CUDADeviceTy : public GenericDeviceTy {
     // Once the stream is synchronized and the operations completed (or an error
     // occurs), return it to stream pool and reset AsyncInfo. This is to make
     // sure the synchronization only works for its own tasks.
+    DP("Deleting queue\n");
     AsyncInfo.Queue = nullptr;
-    if (auto Err = CUDAStreamManager.returnResource(Stream))
-      return Err;
+    DP("Returning resource\n");
+    //if (auto Err = CUDAStreamManager.returnResource(Stream))
+    //  return Err;
 
     return Plugin::check(Res, "error in cuStreamQuery: %s");
   }
@@ -865,22 +877,49 @@ struct CUDADeviceTy : public GenericDeviceTy {
     if (auto Err = getStream(AsyncInfoWrapper, Stream))
       return Err;
 
-    void *Event = __kmpc_omp_get_event(__kmpc_global_thread_num(NULL));
-    unsigned long long StreamId;
-    cuStreamGetId(Stream, &StreamId);
-    DP("OMP_EVENT: " DPxMOD ", Stream: %llu\n", DPxPTR(Event), StreamId);
+    struct CallbackData {
+      void *omp_event;
+      CUevent device_event;
+      CUDAEventManagerTy *event_manager;
+      CUstream stream;
+      CUDAStreamManagerTy *stream_manager;
+    };
+
+    int32_t gtid = __kmpc_global_thread_num(NULL);
+    void *omp_event = __kmpc_omp_get_event(gtid);
+    void **device_event_ptr = __kmpc_omp_get_device_event_ptr(gtid);
+    CUevent device_event = static_cast<CUevent>(*device_event_ptr);
+
+    CallbackData *data = new CallbackData{
+      .omp_event = omp_event,
+      .device_event = device_event,
+      .event_manager = &CUDAEventManager,
+      .stream = Stream,
+      .stream_manager = &CUDAStreamManager
+    };
+
+    //CUstream management_stream;
+    //CUDAStreamManager.getResource(management_stream);
+
+    //cuStreamWaitEvent(management_stream, device_event, 0);
+
     CUresult Res = cuLaunchHostFunc(
       Stream,
-      [] (void *Event) {
-        DP("Fulfill event " DPxMOD "\n", DPxPTR(Event));
-        //auto start = std::chrono::steady_clock::now();
-        __kmpc_fulfill_event(Event);
-        //auto end = std::chrono::steady_clock::now();
-        //auto duration = std::chrono::duration_cast<std::chrono::duration<double, std::micro>>(end - start).count();
-        //DP("Fulfilled event " DPxMOD " in %f µs\n", DPxPTR(Event), duration);
+      [] (void *userData) {
+        CallbackData *data = static_cast<CallbackData *>(userData);
+        DP("Fulfill event " DPxMOD "\n", DPxPTR(data->omp_event));
+        //data->event_manager->returnResource(data->device_event);
+        __kmpc_fulfill_event(data->omp_event);
       },
-      Event
+      (void *)data
     );
+
+    //printf("Returning resource\n");
+    //fflush(stdout);
+    CUDAStreamManager.returnResource(Stream);
+    //printf("Returned resource\n");
+    //fflush(stdout);
+
     return Plugin::check(Res, "error in cuLaunchHostFunc: %s");
   }
 

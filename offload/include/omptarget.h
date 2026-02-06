@@ -138,7 +138,7 @@ public:
 
   AsyncInfoTy(DeviceTy &Device, SyncTy SyncType = SyncTy::BLOCKING)
       : Device(Device), SyncType(SyncType) {}
-  ~AsyncInfoTy() { synchronize(); }
+  ~AsyncInfoTy() { /*synchronize();*/ }
 
   /// Implicit conversion to the __tgt_async_info which is used in the
   /// plugin interface.

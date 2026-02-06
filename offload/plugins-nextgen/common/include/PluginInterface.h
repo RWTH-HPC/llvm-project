@@ -1600,14 +1600,21 @@ protected:
   /// Return resource to the pool and process the resource with \p Processor.
   template <typename FuncTy>
   Error returnResourceImpl(ResourceHandleTy Handle, FuncTy Processor) {
+    DP("Resource Management: Waiting for lock\n");
     const std::lock_guard<std::mutex> Lock(Mutex);
+    DP("Resource Management: Aquired lock\n");
 
     // Process the returned resource.
     if (auto Err = Processor(Handle))
       return Err;
 
+    DP("Resource Management: Processed Handle\n");
+
+
     assert(NextAvailable > 0 && "Resource pool is corrupted");
     ResourcePool[--NextAvailable] = Handle;
+
+    DP("Resource Management: Decremented Pool\n");
 
     return Plugin::success();
   }
