@@ -619,6 +619,8 @@ OMPT_API_ROUTINE ompt_set_result_t ompt_x_set_selective_callback(
         !!(selection & ompt_x_task_property_priority);
     omptTaskPropertyEnabled.threadset =
         !!(selection & ompt_x_task_property_threadset);
+    omptTaskPropertyEnabled.created =
+        !!(selection & ompt_x_task_property_created);
     break;
   default:
     break;

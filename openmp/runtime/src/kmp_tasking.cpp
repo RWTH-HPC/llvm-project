@@ -838,6 +838,7 @@ static void __kmpc_omp_task_begin_if0_template(ident_t *loc_ref, kmp_int32 gtid,
           &(taskdata->ompt_task_info.task_data),
           TASK_TYPE_DETAILS_FORMAT(taskdata), 0, return_address);
     }
+    __ompt_task_creation_end(task, current_task);
     __ompt_task_start(task, current_task, gtid);
   }
 #endif // OMPT_SUPPORT

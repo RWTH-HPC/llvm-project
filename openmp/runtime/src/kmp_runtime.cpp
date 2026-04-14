@@ -4034,6 +4034,15 @@ int __kmp_register_root(int initial_thread) {
   if (ompt_enabled.enabled) {
 
     kmp_info_t *root_thread = ompt_get_thread();
+    root_thread->th.ompt_thread_info.thread_data = ompt_data_none;
+    root_thread->th.ompt_thread_info.task_data = ompt_data_none;
+    root_thread->th.ompt_thread_info.target_task_data = ompt_data_none;
+    root_thread->th.ompt_thread_info.return_address = NULL;
+    root_thread->th.ompt_thread_info.state = ompt_state_undefined;
+    root_thread->th.ompt_thread_info.wait_id = 0;
+    root_thread->th.ompt_thread_info.ompt_task_yielded = 0;
+    root_thread->th.ompt_thread_info.parallel_flags = 0;
+    root_thread->th.ompt_thread_info.idle_frame = NULL;
 
     ompt_set_thread_state(root_thread, ompt_state_overhead);
 
@@ -4327,6 +4336,7 @@ static void __kmp_initialize_info(kmp_info_t *this_thr, kmp_team_t *team,
   this_thr->th.th_dispatch = &team->t.t_dispatch[tid];
 
   this_thr->th.th_local.this_construct = 0;
+
 
   if (!this_thr->th.th_pri_common) {
     this_thr->th.th_pri_common =
@@ -6031,6 +6041,15 @@ void *__kmp_launch_thread(kmp_info_t *this_thr) {
 #if OMPT_SUPPORT
   ompt_data_t *thread_data = nullptr;
   if (ompt_enabled.enabled) {
+    this_thr->th.ompt_thread_info.thread_data = ompt_data_none;
+    this_thr->th.ompt_thread_info.task_data = ompt_data_none;
+    this_thr->th.ompt_thread_info.target_task_data = ompt_data_none;
+    this_thr->th.ompt_thread_info.return_address = NULL;
+    this_thr->th.ompt_thread_info.state = ompt_state_undefined;
+    this_thr->th.ompt_thread_info.wait_id = 0;
+    this_thr->th.ompt_thread_info.ompt_task_yielded = 0;
+    this_thr->th.ompt_thread_info.parallel_flags = 0;
+    this_thr->th.ompt_thread_info.idle_frame = NULL;
     thread_data = &(this_thr->th.ompt_thread_info.thread_data);
     *thread_data = ompt_data_none;
 

@@ -872,6 +872,18 @@ void __ompt_taskwait_dep_finish(kmp_taskdata_t *current_task,
   current_task->ompt_task_info.frame.enter_frame.ptr = NULL;
   *taskwait_task_data = ompt_data_none;
 }
+// __ompt_task_creation_end:
+//   Build and trigger task creation end event
+static inline void __ompt_task_creation_end(ompt_data_t *taskwait_data,
+                                            ompt_data_t *current_task_data) {
+  /* let OMPT know that we're creating a task */
+  if ((ompt_enabled.ompt_x_callback_task_property) &&
+      (omptTaskPropertyEnabled.enable_all || omptTaskPropertyEnabled.created)) {
+    ompt_callbacks.ompt_callback(ompt_x_callback_task_property)(
+        current_task_data, ompt_x_task_property_created,
+        taskwait_data);
+  }
+}
 #endif /* OMPT_SUPPORT */
 
 /*!
@@ -921,7 +933,8 @@ void __kmpc_omp_taskwait_deps_51(ident_t *loc_ref, kmp_int32 gtid,
   //  - dependences of the taskwait task
   //  - schedule and finish of the taskwait task
   ompt_data_t *taskwait_task_data = &thread->th.ompt_thread_info.task_data;
-  KMP_ASSERT(taskwait_task_data->ptr == NULL);
+//  KMP_ASSERT(taskwait_task_data->ptr == NULL);
+  *taskwait_task_data = ompt_data_none;
   if (ompt_enabled.enabled) {
     if (!current_task->ompt_task_info.frame.enter_frame.ptr)
       current_task->ompt_task_info.frame.enter_frame.ptr =
@@ -1001,6 +1014,9 @@ void __kmpc_omp_taskwait_deps_51(ident_t *loc_ref, kmp_int32 gtid,
                   "dependences : loc=%p\n",
                   gtid, loc_ref));
 #if OMPT_SUPPORT
+    if (UNLIKELY(ompt_enabled.enabled)) {
+      __ompt_task_creation_end(taskwait_task_data, &(current_task->ompt_task_info.task_data));
+    }
     __ompt_taskwait_dep_finish(current_task, taskwait_task_data);
 #endif /* OMPT_SUPPORT */
     return;
@@ -1016,10 +1032,18 @@ void __kmpc_omp_taskwait_deps_51(ident_t *loc_ref, kmp_int32 gtid,
                   "dependences : loc=%p\n",
                   gtid, loc_ref));
 #if OMPT_SUPPORT
+    if (UNLIKELY(ompt_enabled.enabled)) {
+      __ompt_task_creation_end(taskwait_task_data, &(current_task->ompt_task_info.task_data));
+    }
     __ompt_taskwait_dep_finish(current_task, taskwait_task_data);
 #endif /* OMPT_SUPPORT */
     return;
   }
+#if OMPT_SUPPORT
+  if (UNLIKELY(ompt_enabled.enabled)) {
+    __ompt_task_creation_end(taskwait_task_data, &(current_task->ompt_task_info.task_data));
+  }
+#endif /* OMPT_SUPPORT */
 
   int thread_finished = FALSE;
   kmp_flag_32<false, false> flag(
