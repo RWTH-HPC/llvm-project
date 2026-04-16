@@ -2219,7 +2219,7 @@ kmp_int32 __kmpc_omp_task(ident_t *loc_ref, kmp_int32 gtid,
   }
 #endif
 
-  res = __kmp_omp_task(gtid, new_task, true);
+  res = __kmp_omp_task(gtid, new_task, true, !!new_taskdata->td_flags.started);
 
   KA_TRACE(10, ("__kmpc_omp_task(exit): T#%d returning "
                 "TASK_CURRENT_NOT_QUEUED: loc=%p task=%p\n",
