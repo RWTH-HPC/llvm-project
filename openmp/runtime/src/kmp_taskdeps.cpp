@@ -18,7 +18,29 @@
 #include "kmp_taskdeps.h"
 #if OMPT_SUPPORT
 #include "ompt-specific.h"
-#endif
+void __ompt_taskwait_dep_finish(kmp_taskdata_t *current_task,
+                                ompt_data_t *taskwait_task_data) {
+  if (ompt_enabled.ompt_callback_task_schedule) {
+    ompt_callbacks.ompt_callback(ompt_callback_task_schedule)(
+        taskwait_task_data, ompt_taskwait_complete, NULL);
+  }
+  current_task->ompt_task_info.frame.enter_frame.ptr = NULL;
+  *taskwait_task_data = ompt_data_none;
+}
+// __ompt_task_creation_end:
+//   Build and trigger task creation end event
+static inline void __ompt_task_creation_end(ompt_data_t *taskwait_data,
+                                            ompt_data_t *current_task_data) {
+  /* let OMPT know that we're creating a task */
+  if ((ompt_enabled.ompt_x_callback_task_property) &&
+      (omptTaskPropertyEnabled.enable_all || omptTaskPropertyEnabled.created)) {
+    ompt_callbacks.ompt_callback(ompt_x_callback_task_property)(
+        current_task_data, ompt_x_task_property_created,
+        taskwait_data);
+  }
+}
+#endif /* OMPT_SUPPORT */
+
 
 // TODO: Improve memory allocation? keep a list of pre-allocated structures?
 // allocate in blocks? re-use list finished list entries?
@@ -836,8 +858,9 @@ kmp_int32 __kmpc_omp_task_with_deps(ident_t *loc_ref, kmp_int32 gtid,
                     "loc=%p task=%p, return: TASK_CURRENT_NOT_QUEUED\n",
                     gtid, loc_ref, new_taskdata));
 #if OMPT_SUPPORT
-      if (ompt_enabled.enabled) {
+      if (UNLIKELY(ompt_enabled.enabled)) {
         current_task->ompt_task_info.frame.enter_frame = ompt_data_none;
+        __ompt_task_creation_end(&(new_taskdata->ompt_task_info.task_data), &(current_task->ompt_task_info.task_data));
       }
 #endif
       return TASK_CURRENT_NOT_QUEUED;
@@ -855,36 +878,13 @@ kmp_int32 __kmpc_omp_task_with_deps(ident_t *loc_ref, kmp_int32 gtid,
 
   kmp_int32 ret = __kmp_omp_task(gtid, new_task, true);
 #if OMPT_SUPPORT
-  if (ompt_enabled.enabled) {
+  if (UNLIKELY(ompt_enabled.enabled)) {
     current_task->ompt_task_info.frame.enter_frame = ompt_data_none;
+    __ompt_task_creation_end(&(new_taskdata->ompt_task_info.task_data), &(current_task->ompt_task_info.task_data));
   }
 #endif
   return ret;
 }
-
-#if OMPT_SUPPORT
-void __ompt_taskwait_dep_finish(kmp_taskdata_t *current_task,
-                                ompt_data_t *taskwait_task_data) {
-  if (ompt_enabled.ompt_callback_task_schedule) {
-    ompt_callbacks.ompt_callback(ompt_callback_task_schedule)(
-        taskwait_task_data, ompt_taskwait_complete, NULL);
-  }
-  current_task->ompt_task_info.frame.enter_frame.ptr = NULL;
-  *taskwait_task_data = ompt_data_none;
-}
-// __ompt_task_creation_end:
-//   Build and trigger task creation end event
-static inline void __ompt_task_creation_end(ompt_data_t *taskwait_data,
-                                            ompt_data_t *current_task_data) {
-  /* let OMPT know that we're creating a task */
-  if ((ompt_enabled.ompt_x_callback_task_property) &&
-      (omptTaskPropertyEnabled.enable_all || omptTaskPropertyEnabled.created)) {
-    ompt_callbacks.ompt_callback(ompt_x_callback_task_property)(
-        current_task_data, ompt_x_task_property_created,
-        taskwait_data);
-  }
-}
-#endif /* OMPT_SUPPORT */
 
 /*!
 @ingroup TASKING
