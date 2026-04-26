@@ -877,12 +877,7 @@ kmp_int32 __kmpc_omp_task_with_deps(ident_t *loc_ref, kmp_int32 gtid,
                 gtid, loc_ref, new_taskdata));
 
   kmp_int32 ret = __kmp_omp_task(gtid, new_task, true);
-#if OMPT_SUPPORT
-  if (UNLIKELY(ompt_enabled.enabled)) {
-    current_task->ompt_task_info.frame.enter_frame = ompt_data_none;
-    __ompt_task_creation_end(&(new_taskdata->ompt_task_info.task_data), &(current_task->ompt_task_info.task_data));
-  }
-#endif
+
   return ret;
 }
 
