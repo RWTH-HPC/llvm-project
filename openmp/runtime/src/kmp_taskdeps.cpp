@@ -764,6 +764,15 @@ kmp_int32 __kmpc_omp_task_with_deps(ident_t *loc_ref, kmp_int32 gtid,
           TASK_TYPE_DETAILS_FORMAT(new_taskdata), 1,
           OMPT_LOAD_OR_GET_RETURN_ADDRESS(gtid));
     }
+    if (new_taskdata->td_flags.named &&
+        ompt_enabled.ompt_x_callback_task_property &&
+        (omptTaskPropertyEnabled.enable_all ||
+         omptTaskPropertyEnabled.name)) {
+      ompt_x_task_property_name_t nameProperty{new_task->data3.name};
+      ompt_callbacks.ompt_callback(ompt_x_callback_task_property)(
+          &(new_taskdata->ompt_task_info.task_data),
+          ompt_x_task_property_name, &nameProperty);
+    }
 
     new_taskdata->ompt_task_info.frame.enter_frame.ptr =
         OMPT_GET_FRAME_ADDRESS(0);

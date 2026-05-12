@@ -838,6 +838,15 @@ static void __kmpc_omp_task_begin_if0_template(ident_t *loc_ref, kmp_int32 gtid,
           &(taskdata->ompt_task_info.task_data),
           TASK_TYPE_DETAILS_FORMAT(taskdata), 0, return_address);
     }
+    if (taskdata->td_flags.named &&
+        ompt_enabled.ompt_x_callback_task_property &&
+        (omptTaskPropertyEnabled.enable_all ||
+         omptTaskPropertyEnabled.name)) {
+      ompt_x_task_property_name_t nameProperty{task->data3.name};
+      ompt_callbacks.ompt_callback(ompt_x_callback_task_property)(
+          &(taskdata->ompt_task_info.task_data),
+          ompt_x_task_property_name, &nameProperty);
+    }
     __ompt_task_creation_end(task, current_task);
     __ompt_task_start(task, current_task, gtid);
   }
