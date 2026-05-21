@@ -318,7 +318,8 @@ typedef enum ompt_sync_region_t {
   ompt_sync_region_reduction              = 7,
   ompt_sync_region_barrier_implicit_workshare = 8,
   ompt_sync_region_barrier_implicit_parallel = 9,
-  ompt_sync_region_barrier_teams = 10
+  ompt_sync_region_barrier_teams = 10,
+  ompt_sync_region_undeferrable_task = 11
 } ompt_sync_region_t;
 
 typedef enum ompt_target_data_op_t {
@@ -376,6 +377,7 @@ typedef enum ompt_task_flag_t {
   ompt_task_explicit                  = 0x00000004,
   ompt_task_target                    = 0x00000008,
   ompt_task_taskwait                  = 0x00000010,
+  ompt_task_undeferrable              = 0x01000000,
   ompt_task_undeferred                = 0x08000000,
   ompt_task_untied                    = 0x10000000,
   ompt_task_final                     = 0x20000000,
